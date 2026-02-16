@@ -193,7 +193,7 @@ pip install -r requirements.txt
 python app.py
 ```
 
-访问 http://localhost:5144
+访问 http://localhost:5145
 
 ## 9. 项目结构
 

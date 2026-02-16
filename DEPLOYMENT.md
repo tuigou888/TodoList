@@ -56,7 +56,7 @@ docker-compose down
 
 ### 4. 访问应用
 
-访问 http://localhost:5144
+访问 http://localhost:5145
 
 ### 5. 手动 Docker 构建
 
@@ -65,7 +65,7 @@ docker-compose down
 docker build -t todo-list-app .
 
 # 运行容器
-docker run -d -p 5144:5144 --env-file .env todo-list-app
+docker run -d -p 5145:5145 --env-file .env todo-list-app
 ```
 
 ### 6. Docker Compose 配置说明
@@ -78,7 +78,7 @@ services:
     build: .
     container_name: todo-list-app
     ports:
-      - "5144:5144"
+      - "5145:5145"
     env_file:
       - .env
     volumes:
@@ -132,10 +132,10 @@ cp .env.example .env
 python app.py
 
 # 或使用 Gunicorn（生产环境）
-gunicorn -w 4 -b 0.0.0.0:5144 app:app
+gunicorn -w 4 -b 0.0.0.0:5145 app:app
 ```
 
-访问 http://localhost:5144
+访问 http://localhost:5145
 
 ## 配置说明
 
@@ -154,7 +154,7 @@ gunicorn -w 4 -b 0.0.0.0:5144 app:app
 | MAIL_PASSWORD | 邮箱密码/授权码 | - |
 | MAIL_DEFAULT_SENDER | 发件人邮箱 | - |
 | CORS_ENABLED | 启用跨域 | True |
-| ALLOWED_ORIGINS | 允许的域名 | localhost:3000,5144 |
+| ALLOWED_ORIGINS | 允许的域名 | localhost:3000,5145 |
 
 ### 设置管理员
 
@@ -171,7 +171,7 @@ sqlite> UPDATE users SET is_admin = 1 WHERE username = 'your_username';
 
 ```bash
 # 查找占用端口的进程
-netstat -tlnp | grep :5144
+netstat -tlnp | grep :5145
 
 # 或使用其他端口
 docker-compose.yml 中修改 ports

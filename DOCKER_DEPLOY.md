@@ -17,11 +17,13 @@
 ### 1. 安装 Docker
 
 **Windows:**
+
 - 下载 [Docker Desktop](https://www.docker.com/products/docker-desktop)
 - 安装并启动 Docker Desktop
 - 确保 WSL2 已启用（Windows 11/10）
 
 **Linux (Ubuntu):**
+
 ```bash
 sudo apt update
 sudo apt install docker.io docker-compose
@@ -30,6 +32,7 @@ sudo systemctl enable docker
 ```
 
 **macOS:**
+
 - 下载 [Docker Desktop for Mac](https://www.docker.com/products/docker-desktop)
 - 安装并启动
 
@@ -77,6 +80,7 @@ MAIL_DEFAULT_SENDER=your-email@qq.com
 ```
 
 **如何生成 SECRET_KEY:**
+
 ```bash
 python -c "import secrets; print(secrets.token_hex(32))"
 ```
@@ -96,7 +100,7 @@ docker-compose logs -f
 
 ### 步骤 4: 访问应用
 
-打开浏览器访问：**http://localhost:5144**
+打开浏览器访问：**http://localhost:5145**
 
 ---
 
@@ -115,7 +119,7 @@ docker build -t todo-list-app .
 ```bash
 docker run -d \
   --name todo-list \
-  -p 5144:5144 \
+  -p 5145:5145 \
   --env-file .env \
   -v ./todos.db:/app/todos.db \
   todo-list-app
@@ -144,14 +148,14 @@ docker rm todo-list
 
 ## Docker Compose 常用命令
 
-| 命令 | 说明 |
-|------|------|
-| `docker-compose up -d` | 后台启动 |
-| `docker-compose down` | 停止并删除容器 |
-| `docker-compose restart` | 重启 |
-| `docker-compose logs -f` | 查看日志 |
-| `docker-compose ps` | 查看状态 |
-| `docker-compose build` | 重新构建 |
+| 命令                       | 说明           |
+| -------------------------- | -------------- |
+| `docker-compose up -d`   | 后台启动       |
+| `docker-compose down`    | 停止并删除容器 |
+| `docker-compose restart` | 重启           |
+| `docker-compose logs -f` | 查看日志       |
+| `docker-compose ps`      | 查看状态       |
+| `docker-compose build`   | 重新构建       |
 
 ---
 
@@ -160,19 +164,21 @@ docker rm todo-list
 ### 端口映射
 
 docker-compose.yml 中配置：
+
 ```yaml
 ports:
-  - "5144:5144"
+  - "5145:5145"
 ```
 
-- **左边 5144**：宿主机端口（访问的端口）
-- **右边 5144**：容器内端口
+- **左边 5145**：宿主机端口（访问的端口）
+- **右边 5145**：容器内端口
 
 如需修改，编辑 `docker-compose.yml`。
 
 ### 数据持久化
 
 应用数据存储在：
+
 - `todos.db` - SQLite 数据库
 - `flask_session/` - Session 文件
 
@@ -181,9 +187,10 @@ ports:
 ### 健康检查
 
 Docker Compose 配置了健康检查：
+
 ```yaml
 healthcheck:
-  test: ["CMD", "curl", "-f", "http://localhost:5144/"]
+  test: ["CMD", "curl", "-f", "http://localhost:5145/"]
 ```
 
 ---
@@ -194,11 +201,11 @@ healthcheck:
 
 ```bash
 # 查找占用端口的进程
-netstat -tlnp | grep :5144   # Linux
-netstat -ano | findstr :5144  # Windows
+netstat -tlnp | grep :5145   # Linux
+netstat -ano | findstr :5145  # Windows
 
 # 修改端口
-# 编辑 docker-compose.yml，将 5144:5144 改为其他端口
+# 编辑 docker-compose.yml，将 5145:5145 改为其他端口
 ```
 
 ### Q2: 数据库权限问题
@@ -264,7 +271,7 @@ server {
     server_name your-domain.com;
 
     location / {
-        proxy_pass http://localhost:5144;
+        proxy_pass http://localhost:5145;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
     }

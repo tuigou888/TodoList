@@ -11,7 +11,7 @@ class Config:
     # 允许的域名，多个用逗号分隔
     ALLOWED_ORIGINS = os.environ.get(
         "ALLOWED_ORIGINS",
-        "http://localhost:3000,http://localhost:5144,http://127.0.0.1:3000,http://127.0.0.1:5144",
+        "http://localhost:3000,http://localhost:5145,http://127.0.0.1:3000,http://127.0.0.1:5145",
     ).split(",")
 
     MAIL_SERVER = os.environ.get("MAIL_SERVER", "smtp.qq.com")

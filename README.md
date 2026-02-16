@@ -43,7 +43,7 @@ cp .env.example .env
 docker-compose up -d
 ```
 
-访问 http://localhost:5144
+访问 http://localhost:5145
 
 ### 本地运行
 
@@ -68,7 +68,7 @@ cp .env.example .env
 python app.py
 ```
 
-访问 http://localhost:5144
+访问 http://localhost:5145
 
 ## 环境变量配置
 
@@ -89,7 +89,7 @@ MAIL_DEFAULT_SENDER=your-email@example.com
 
 # 跨域配置（可选）
 CORS_ENABLED=True
-ALLOWED_ORIGINS=http://localhost:3000,http://localhost:5144
+ALLOWED_ORIGINS=http://localhost:3000,http://localhost:5145
 ```
 
 ## 项目结构
