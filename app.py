@@ -52,7 +52,9 @@ def cors_response(response):
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "SAMEORIGIN"
     response.headers["X-XSS-Protection"] = "1; mode=block"
-    response.headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;"
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;"
+    )
 
     return response
 
@@ -220,7 +222,7 @@ def forgot_password():
         return jsonify({"message": "如果邮箱存在，已发送重置链接"}), 200
 
     token = generate_reset_token(user["id"])
-    reset_link = f"http://localhost:5000/reset-password/{token}"
+    reset_link = f"http://localhost:5144/reset-password/{token}"
 
     html_content = f"""
     <html>
@@ -370,7 +372,7 @@ def send_reminder_emails():
                         <div class="todo-list">
                             {"".join([f'<div class="todo-item">{todo["title"]}</div>' for todo in todos])}
                         </div>
-                        <p style="margin-top: 20px;">点击 <a href="http://localhost:5000">这里</a> 查看和管理你的待办事项。</p>
+                        <p style="margin-top: 20px;">点击 <a href="http://localhost:5144">这里</a> 查看和管理你的待办事项。</p>
                     </div>
                     <div class="footer">
                         <p>此邮件由系统自动发送，请勿回复。</p>
@@ -1100,7 +1102,7 @@ def send_reminder_now():
                 <div class="todo-list">
                     {"".join([f'<div class="todo-item">{todo["title"]}</div>' for todo in todos])}
                 </div>
-                <p style="margin-top: 20px;">点击 <a href="http://localhost:5000">这里</a> 查看和管理你的待办事项。</p>
+                <p style="margin-top: 20px;">点击 <a href="http://localhost:5144">这里</a> 查看和管理你的待办事项。</p>
             </div>
             <div class="footer">
                 <p>此邮件由系统自动发送，请勿回复。</p>
@@ -1119,4 +1121,4 @@ if __name__ == "__main__":
     init_db()
     if not os.environ.get("WERKZEUG_RUN_MAIN"):
         start_reminder_scheduler()
-    app.run(debug=True, host="0.0.0.0", port=5000)
+    app.run(debug=True, host="0.0.0.0", port=5144)

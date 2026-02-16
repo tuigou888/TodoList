@@ -7,7 +7,7 @@ services:
       dockerfile: Dockerfile
     container_name: todo-list-app
     ports:
-      - "5000:5000"
+      - "5144:5144"
     env_file:
       - .env
     volumes:
@@ -15,7 +15,7 @@ services:
       - flask_session_data:/app/flask_session
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5000/"]
+      test: ["CMD", "curl", "-f", "http://localhost:5144/"]
       interval: 30s
       timeout: 10s
       retries: 3
