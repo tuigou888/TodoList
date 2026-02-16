@@ -1,0 +1,1017 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>每日待办事项</title>
+    <style>
+        :root {
+            --primary: #6366f1;
+            --primary-dark: #4f46e5;
+            --primary-light: #818cf8;
+            --secondary: #06b6d4;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --gray-50: #f9fafb;
+            --gray-100: #f3f4f6;
+            --gray-200: #e5e7eb;
+            --gray-300: #d1d5db;
+            --gray-400: #9ca3af;
+            --gray-500: #6b7280;
+            --gray-600: #4b5563;
+            --gray-700: #374151;
+            --gray-800: #1f2937;
+            --gray-900: #111827;
+            --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+            --shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
+            --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+            --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+            --radius-sm: 6px;
+            --radius: 10px;
+            --radius-md: 14px;
+            --radius-lg: 18px;
+            --radius-xl: 24px;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background-attachment: fixed;
+            min-height: 100vh;
+            padding: 20px;
+            color: var(--gray-800);
+        }
+
+        .container {
+            max-width: 680px;
+            margin: 0 auto;
+        }
+
+        .header {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            color: var(--gray-800);
+            padding: 28px;
+            border-radius: var(--radius-xl);
+            margin-bottom: 24px;
+            box-shadow: var(--shadow-xl);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+        }
+
+        .header-top {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 16px;
+            border-bottom: 1px solid var(--gray-100);
+        }
+
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        .username {
+            font-size: 15px;
+            font-weight: 600;
+            color: var(--gray-700);
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .btn-logout {
+            background: var(--gray-100);
+            color: var(--gray-600);
+            border: none;
+            padding: 8px 16px;
+            border-radius: var(--radius);
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .btn-logout:hover {
+            background: var(--danger);
+            color: white;
+            transform: translateY(-1px);
+            box-shadow: var(--shadow-md);
+        }
+
+        .reminder-info {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 12px;
+            color: var(--gray-500);
+            background: var(--gray-50);
+            padding: 6px 12px;
+            border-radius: var(--radius);
+            border: 1px solid var(--gray-200);
+        }
+
+        .reminder-info::before {
+            content: '🔔';
+            font-size: 11px;
+        }
+
+        .date-picker {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 20px;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        .view-mode-toggle {
+            display: flex;
+            background: var(--gray-100);
+            border-radius: var(--radius);
+            padding: 4px;
+            gap: 4px;
+        }
+
+        .view-mode-btn {
+            padding: 8px 16px;
+            border: none;
+            background: transparent;
+            color: var(--gray-500);
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            border-radius: var(--radius-sm);
+            transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .view-mode-btn.active {
+            background: white;
+            color: var(--primary);
+            font-weight: 600;
+            box-shadow: var(--shadow-sm);
+        }
+
+        .view-mode-btn:hover:not(.active) {
+            color: var(--gray-700);
+            background: rgba(255, 255, 255, 0.5);
+        }
+
+        .date-display {
+            font-size: 14px;
+            font-weight: 500;
+            color: var(--gray-600);
+        }
+
+        .date-input {
+            background: var(--gray-50);
+            border: 2px solid var(--gray-200);
+            color: var(--gray-700);
+            padding: 10px 14px;
+            border-radius: var(--radius);
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .date-input:hover {
+            border-color: var(--primary-light);
+        }
+
+        .date-input:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+        }
+
+        .header h1 {
+            font-size: 26px;
+            font-weight: 700;
+            color: var(--gray-800);
+            margin-bottom: 16px;
+            letter-spacing: -0.5px;
+        }
+
+        .stats {
+            display: flex;
+            gap: 24px;
+            padding-top: 16px;
+            border-top: 1px solid var(--gray-100);
+        }
+
+        .stat-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 16px;
+            background: var(--gray-50);
+            border-radius: var(--radius);
+            transition: all 0.2s;
+        }
+
+        .stat-item:hover {
+            background: var(--gray-100);
+            transform: translateY(-1px);
+        }
+
+        .stat-item .count {
+            font-weight: 700;
+            font-size: 20px;
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .stat-item span:last-child {
+            font-size: 13px;
+            color: var(--gray-500);
+            font-weight: 500;
+        }
+
+        .add-form {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            padding: 28px;
+            border-radius: var(--radius-xl);
+            margin-bottom: 24px;
+            box-shadow: var(--shadow-lg);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+        }
+
+        .add-form h2 {
+            font-size: 16px;
+            color: var(--gray-700);
+            margin-bottom: 20px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .input-group {
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+        }
+
+        .input-group input {
+            width: 100%;
+            padding: 16px 18px;
+            border: 2px solid var(--gray-200);
+            border-radius: var(--radius-md);
+            font-size: 15px;
+            transition: all 0.2s;
+            background: var(--gray-50);
+        }
+
+        .input-group input:hover {
+            border-color: var(--gray-300);
+        }
+
+        .input-group input:focus {
+            outline: none;
+            border-color: var(--primary);
+            background: white;
+            box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.1);
+        }
+
+        .input-group input::placeholder {
+            color: var(--gray-400);
+        }
+
+        .btn-add {
+            background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+            color: white;
+            border: none;
+            padding: 16px 28px;
+            border-radius: var(--radius-md);
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+            box-shadow: 0 4px 14px rgba(99, 102, 241, 0.35);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        .btn-add:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(99, 102, 241, 0.45);
+        }
+
+        .btn-add:active {
+            transform: translateY(0);
+        }
+
+        .todo-list {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border-radius: var(--radius-xl);
+            box-shadow: var(--shadow-lg);
+            overflow: hidden;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+        }
+
+        .todo-list-header {
+            padding: 24px 28px;
+            border-bottom: 1px solid var(--gray-100);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: linear-gradient(to right, var(--gray-50), white);
+        }
+
+        .todo-list-header h2 {
+            font-size: 16px;
+            color: var(--gray-700);
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .todo-items {
+            max-height: 520px;
+            overflow-y: auto;
+        }
+
+        .todo-items::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .todo-items::-webkit-scrollbar-track {
+            background: var(--gray-100);
+        }
+
+        .todo-items::-webkit-scrollbar-thumb {
+            background: var(--gray-300);
+            border-radius: 3px;
+        }
+
+        .todo-items::-webkit-scrollbar-thumb:hover {
+            background: var(--gray-400);
+        }
+
+        .todo-item {
+            padding: 20px 28px;
+            border-bottom: 1px solid var(--gray-100);
+            display: flex;
+            align-items: flex-start;
+            gap: 16px;
+            transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+            animation: slideIn 0.3s ease-out;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .todo-item:hover {
+            background: linear-gradient(to right, var(--gray-50), rgba(99, 102, 241, 0.03));
+            transform: translateX(4px);
+        }
+
+        .todo-item:last-child {
+            border-bottom: none;
+        }
+
+        .todo-item.completed .todo-title {
+            text-decoration: line-through;
+            color: var(--gray-400);
+        }
+
+        .todo-item.completed .todo-description {
+            text-decoration: line-through;
+            color: var(--gray-300);
+        }
+
+        .checkbox {
+            width: 24px;
+            height: 24px;
+            border: 2px solid var(--gray-300);
+            border-radius: 8px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+            margin-top: 2px;
+            background: white;
+        }
+
+        .checkbox:hover {
+            border-color: var(--primary);
+            box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.1);
+        }
+
+        .checkbox.checked {
+            background: linear-gradient(135deg, var(--success), #059669);
+            border-color: var(--success);
+            animation: checkBounce 0.3s ease-out;
+        }
+
+        @keyframes checkBounce {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.15); }
+            100% { transform: scale(1); }
+        }
+
+        .checkbox.checked::after {
+            content: '';
+            width: 6px;
+            height: 10px;
+            border: solid white;
+            border-width: 0 2px 2px 0;
+            transform: rotate(45deg);
+            margin-bottom: 2px;
+        }
+
+        .todo-content {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .todo-title {
+            font-size: 15px;
+            color: var(--gray-800);
+            font-weight: 600;
+            margin-bottom: 6px;
+            line-height: 1.4;
+        }
+
+        .todo-description {
+            font-size: 13px;
+            color: var(--gray-500);
+            line-height: 1.6;
+        }
+
+        .todo-date {
+            font-size: 12px;
+            color: var(--gray-400);
+            margin-top: 10px;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .todo-date::before {
+            content: '📅';
+            font-size: 11px;
+        }
+
+        .btn-delete {
+            background: var(--gray-100);
+            border: none;
+            color: var(--gray-400);
+            cursor: pointer;
+            padding: 10px;
+            border-radius: var(--radius);
+            font-size: 16px;
+            transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+            opacity: 0.7;
+        }
+
+        .btn-delete:hover {
+            background: #fee2e2;
+            color: var(--danger);
+            opacity: 1;
+            transform: scale(1.1);
+        }
+
+        .empty-state {
+            padding: 60px 24px;
+            text-align: center;
+            color: var(--gray-400);
+        }
+
+        .empty-state-icon {
+            font-size: 64px;
+            margin-bottom: 20px;
+            opacity: 0.8;
+            animation: float 3s ease-in-out infinite;
+        }
+
+        @keyframes float {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-10px); }
+        }
+
+        .empty-state p {
+            font-size: 16px;
+            font-weight: 500;
+        }
+
+        .empty-state .sub-text {
+            font-size: 14px;
+            color: var(--gray-400);
+            margin-top: 8px;
+        }
+
+        .toast {
+            position: fixed;
+            bottom: 28px;
+            left: 50%;
+            transform: translateX(-50%) translateY(100px);
+            background: var(--gray-800);
+            color: white;
+            padding: 14px 28px;
+            border-radius: var(--radius-lg);
+            font-size: 14px;
+            font-weight: 500;
+            opacity: 0;
+            transition: all 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+            z-index: 1000;
+            box-shadow: var(--shadow-xl);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .toast.show {
+            transform: translateX(-50%) translateY(0);
+            opacity: 1;
+        }
+
+        .toast.error {
+            background: var(--danger);
+        }
+
+        .toast.success {
+            background: var(--success);
+        }
+
+        .toast::before {
+            font-size: 16px;
+        }
+
+        .toast.success::before {
+            content: '✓';
+        }
+
+        .toast.error::before {
+            content: '✕';
+        }
+
+        @media (max-width: 480px) {
+            body {
+                padding: 12px;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            }
+
+            .container {
+                padding: 0;
+            }
+
+            .header {
+                padding: 20px;
+                border-radius: var(--radius-lg);
+            }
+
+            .header-top {
+                flex-direction: column;
+                gap: 12px;
+                align-items: flex-start;
+            }
+
+            .user-info {
+                width: 100%;
+                justify-content: space-between;
+            }
+
+            .header h1 {
+                font-size: 22px;
+            }
+
+            .stats {
+                flex-direction: row;
+                gap: 12px;
+            }
+
+            .stat-item {
+                flex: 1;
+                justify-content: center;
+            }
+
+            .add-form {
+                padding: 20px;
+                border-radius: var(--radius-lg);
+            }
+
+            .todo-item {
+                padding: 16px 20px;
+            }
+
+            .todo-list {
+                border-radius: var(--radius-lg);
+            }
+
+            .date-picker {
+                flex-direction: column;
+                align-items: stretch;
+            }
+
+            .view-mode-toggle {
+                justify-content: center;
+            }
+        }
+
+        @media (min-width: 481px) and (max-width: 768px) {
+            .header {
+                padding: 24px;
+            }
+
+            .header h1 {
+                font-size: 24px;
+            }
+
+            .add-form {
+                padding: 24px;
+            }
+        }
+
+        @media (min-width: 769px) {
+            .container {
+                padding: 20px;
+            }
+
+            .header {
+                padding: 32px;
+            }
+
+            .header h1 {
+                font-size: 28px;
+            }
+        }
+
+        .todo-item.deleting {
+            animation: slideOut 0.3s ease-out forwards;
+        }
+
+        @keyframes slideOut {
+            to {
+                opacity: 0;
+                transform: translateX(100px);
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="header-top">
+                <div class="user-info">
+                    <span class="username" id="username"></span>
+                    <span class="reminder-info">通知: 7:00-23:00 每小时</span>
+                    <button class="btn-logout" onclick="handleLogout()">退出</button>
+                </div>
+            </div>
+            <div class="date-picker">
+                <div class="view-mode-toggle">
+                    <button class="view-mode-btn active" id="btnToday" onclick="switchViewMode('today')">今天</button>
+                    <button class="view-mode-btn" id="btnAll" onclick="switchViewMode('all')">所有</button>
+                </div>
+                <span class="date-display" id="dateDisplay"></span>
+                <input type="date" class="date-input" id="datePicker">
+            </div>
+            <h1 id="pageTitle">今日待办事项</h1>
+            <div class="stats">
+                <div class="stat-item">
+                    <span class="count" id="totalCount">0</span>
+                    <span>全部</span>
+                </div>
+                <div class="stat-item">
+                    <span class="count" id="completedCount">0</span>
+                    <span>已完成</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="add-form">
+            <h2>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <line x1="12" y1="8" x2="12" y2="16"></line>
+                    <line x1="8" y1="12" x2="16" y2="12"></line>
+                </svg>
+                添加新待办
+            </h2>
+            <div class="input-group">
+                <input type="text" id="todoTitle" placeholder="输入待办事项标题..." maxlength="100">
+                <input type="text" id="todoDescription" placeholder="添加描述（可选）..." maxlength="500">
+                <button class="btn-add" onclick="addTodo()">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="12" y1="5" x2="12" y2="19"></line>
+                        <line x1="5" y1="12" x2="19" y2="12"></line>
+                    </svg>
+                    添加待办
+                </button>
+            </div>
+        </div>
+
+        <div class="todo-list">
+            <div class="todo-list-header">
+                <h2>
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M9 11l3 3L22 4"></path>
+                        <path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"></path>
+                    </svg>
+                    待办事项
+                </h2>
+            </div>
+            <div class="todo-items" id="todoItems">
+                <div class="empty-state">
+                    <div class="empty-state-icon">📝</div>
+                    <p>暂无待办事项</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="toast" id="toast"></div>
+
+    <script>
+        let currentDate = new Date().toISOString().split('T')[0];
+        let viewMode = 'today';
+
+        function switchViewMode(mode) {
+            viewMode = mode;
+            document.getElementById('btnToday').classList.toggle('active', mode === 'today');
+            document.getElementById('btnAll').classList.toggle('active', mode === 'all');
+            document.getElementById('pageTitle').textContent = mode === 'today' ? '今日待办事项' : '所有待办事项';
+            loadTodos();
+        }
+
+        async function init() {
+            await checkAuth();
+            
+            const today = new Date();
+            document.getElementById('datePicker').value = currentDate;
+            updateDateDisplay();
+            loadTodos();
+
+            document.getElementById('datePicker').addEventListener('change', (e) => {
+                currentDate = e.target.value;
+                updateDateDisplay();
+                loadTodos();
+            });
+
+            document.getElementById('todoTitle').addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    addTodo();
+                }
+            });
+        }
+
+        async function checkAuth() {
+            try {
+                const response = await fetch('/api/me');
+                if (response.ok) {
+                    const user = await response.json();
+                    
+                    if (user.is_admin) {
+                        window.location.href = '/admin';
+                        return false;
+                    }
+                    
+                    document.getElementById('username').textContent = user.username;
+                    return true;
+                } else {
+                    window.location.href = '/login';
+                    return false;
+                }
+            } catch (error) {
+                window.location.href = '/login';
+                return false;
+            }
+        }
+
+        async function handleLogout() {
+            if (!confirm('确定要退出登录吗？')) {
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/logout', {
+                    method: 'POST'
+                });
+                
+                if (response.ok) {
+                    showToast('已退出登录', 'success');
+                    setTimeout(() => {
+                        window.location.href = '/login';
+                    }, 1000);
+                }
+            } catch (error) {
+                showToast('退出失败，请稍后重试', 'error');
+            }
+        }
+
+        function updateDateDisplay() {
+            const date = new Date(currentDate + 'T00:00:00');
+            const options = { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' };
+            document.getElementById('dateDisplay').textContent = date.toLocaleDateString('zh-CN', options);
+        }
+
+        async function loadTodos() {
+            try {
+                let url = '/api/todos';
+                if (viewMode === 'today') {
+                    url += `?date=${currentDate}`;
+                }
+                const response = await fetch(url);
+                if (!response.ok) {
+                    if (response.status === 401) {
+                        window.location.href = '/login';
+                        return;
+                    }
+                    const errorData = await response.json();
+                    showToast(errorData.error || '加载失败', 'error');
+                    return;
+                }
+                const todos = await response.json();
+                renderTodos(todos);
+            } catch (error) {
+                showToast('加载失败，请稍后重试', 'error');
+            }
+        }
+
+        function renderTodos(todos) {
+            const container = document.getElementById('todoItems');
+            
+            if (!Array.isArray(todos)) {
+                container.innerHTML = '';
+                return;
+            }
+            
+            if (todos.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-state-icon">
+                            <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M9 11l3 3L22 4"></path>
+                                <path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"></path>
+                            </svg>
+                        </div>
+                        <p>暂无待办事项</p>
+                        <p class="sub-text">添加一个新任务开始吧</p>
+                    </div>
+                `;
+            } else {
+                container.innerHTML = todos.map(todo => `
+                    <div class="todo-item ${todo.completed ? 'completed' : ''}" data-id="${todo.id}">
+                        <div class="checkbox ${todo.completed ? 'checked' : ''}" onclick="toggleTodo(${todo.id}, ${!todo.completed})"></div>
+                        <div class="todo-content">
+                            <div class="todo-title">${escapeHtml(todo.title)}</div>
+                            ${todo.description ? `<div class="todo-description">${escapeHtml(todo.description)}</div>` : ''}
+                            <div class="todo-date">${formatDateTime(todo.created_at)}</div>
+                        </div>
+                        <button class="btn-delete" onclick="deleteTodo(${todo.id})" title="删除">🗑️</button>
+                    </div>
+                `).join('');
+            }
+
+            updateStats(todos);
+        }
+
+        function updateStats(todos) {
+            const total = todos.length;
+            const completed = todos.filter(t => t.completed).length;
+            document.getElementById('totalCount').textContent = total;
+            document.getElementById('completedCount').textContent = completed;
+        }
+
+        async function addTodo() {
+            const titleInput = document.getElementById('todoTitle');
+            const descInput = document.getElementById('todoDescription');
+            const title = titleInput.value.trim();
+            const description = descInput.value.trim();
+
+            if (!title) {
+                showToast('请输入待办事项标题', 'error');
+                titleInput.focus();
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/todos', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ title, description })
+                });
+
+                if (response.ok) {
+                    titleInput.value = '';
+                    descInput.value = '';
+                    loadTodos();
+                    showToast('添加成功', 'success');
+                } else {
+                    const data = await response.json();
+                    showToast(data.error || '添加失败', 'error');
+                }
+            } catch (error) {
+                showToast('添加失败，请稍后重试', 'error');
+            }
+        }
+
+        async function toggleTodo(id, completed) {
+            try {
+                const response = await fetch(`/api/todos/${id}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ completed })
+                });
+
+                if (response.ok) {
+                    loadTodos();
+                } else {
+                    showToast('更新失败', 'error');
+                }
+            } catch (error) {
+                showToast('更新失败，请稍后重试', 'error');
+            }
+        }
+
+        async function deleteTodo(id) {
+            if (!confirm('确定要删除这条待办事项吗？')) {
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/todos/${id}`, {
+                    method: 'DELETE'
+                });
+
+                if (response.ok) {
+                    loadTodos();
+                    showToast('删除成功', 'success');
+                } else {
+                    showToast('删除失败', 'error');
+                }
+            } catch (error) {
+                showToast('删除失败，请稍后重试', 'error');
+            }
+        }
+
+        function showToast(message, type = '') {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.className = 'toast ' + type;
+            toast.classList.add('show');
+            
+            setTimeout(() => {
+                toast.classList.remove('show');
+            }, 3000);
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function formatDateTime(dateStr) {
+            const date = new Date(dateStr);
+            const today = new Date();
+            const yesterday = new Date(today);
+            yesterday.setDate(yesterday.getDate() - 1);
+
+            if (date.toDateString() === today.toDateString()) {
+                return `今天 ${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`;
+            } else if (date.toDateString() === yesterday.toDateString()) {
+                return `昨天 ${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`;
+            } else {
+                return `${date.getMonth() + 1}/${date.getDate()} ${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`;
+            }
+        }
+
+        init();
+    </script>
+</body>
+</html>
