@@ -1,3 +1,8 @@
+"""
+待办事项管理系统 - 主应用文件
+功能：用户注册登录、待办事项管理、邮件提醒、管理后台
+"""
+
 from flask import Flask, render_template, request, jsonify, session, redirect, url_for
 from flask_session import Session
 import sqlite3
@@ -13,24 +18,35 @@ import time
 import os
 from dotenv import load_dotenv
 
+# 加载环境变量
 load_dotenv()
 from config import Config
 
+# 初始化 Flask 应用
 app = Flask(__name__)
 app.config.from_object(Config)
 app.secret_key = Config.SECRET_KEY
-app.config["SESSION_TYPE"] = "filesystem"
-app.config["SESSION_PERMANENT"] = False
-app.config["SESSION_USE_SIGNER"] = True
-app.config["SESSION_KEY_PREFIX"] = "todo_session_"
+
+# 配置 Flask-Session（服务器端会话存储）
+app.config["SESSION_TYPE"] = "filesystem"  # 使用文件系统存储会话
+app.config["SESSION_PERMANENT"] = False  # 会话在浏览器关闭后过期
+app.config["SESSION_USE_SIGNER"] = True  # 对会话cookie进行签名
+app.config["SESSION_KEY_PREFIX"] = "todo_session_"  # 会话文件前缀
 Session(app)
+
+# 数据库文件名
 DB_NAME = "todos.db"
-REMINDER_SCHEDULER_STARTED = False
-REMINDER_SENT_TODAY = {}
+
+# 邮件提醒定时任务状态
+REMINDER_SCHEDULER_STARTED = False  # 定时任务是否已启动
+REMINDER_SENT_TODAY = {}  # 记录今日已发送的邮件（避免重复发送）
 
 
 def cors_response(response):
-    """添加跨域响应头和内容安全策略"""
+    """
+    添加跨域响应头和内容安全策略
+    用于处理 CORS 跨域请求和安全响应头
+    """
     if hasattr(Config, "CORS_ENABLED") and Config.CORS_ENABLED:
         origin = request.headers.get("Origin", "")
         allowed_origins = getattr(Config, "ALLOWED_ORIGINS", [])
@@ -71,12 +87,20 @@ def handle_options():
 
 
 def get_db_connection():
+    """
+    获取数据库连接
+    返回一个支持字典式访问的 SQLite 连接对象
+    """
     conn = sqlite3.connect(DB_NAME)
     conn.row_factory = sqlite3.Row
     return conn
 
 
 def init_db():
+    """
+    初始化数据库
+    创建用户表和待办事项表（如果不存在）
+    """
     conn = get_db_connection()
     conn.execute(
         """
@@ -111,10 +135,19 @@ def init_db():
 
 
 def hash_password(password):
+    """
+    密码加密函数
+    使用 SHA-256 算法对密码进行哈希处理
+    """
     return hashlib.sha256(password.encode()).hexdigest()
 
 
 def login_required(f):
+    """
+    登录装饰器
+    用于保护需要登录才能访问的路由
+    """
+
     @wraps(f)
     def decorated_function(*args, **kwargs):
         if "user_id" not in session:
@@ -125,6 +158,11 @@ def login_required(f):
 
 
 def admin_required(f):
+    """
+    管理员装饰器
+    用于保护需要管理员权限才能访问的路由
+    """
+
     @wraps(f)
     def decorated_function(*args, **kwargs):
         if "user_id" not in session:
@@ -145,6 +183,13 @@ def admin_required(f):
 
 
 def send_email(to_email, subject, html_content):
+    """
+    发送邮件函数
+    :param to_email: 收件人邮箱
+    :param subject: 邮件主题
+    :param html_content: 邮件HTML内容
+    :return: 发送成功返回 True，失败返回 False
+    """
     if not Config.MAIL_ENABLED or not Config.MAIL_USERNAME or not Config.MAIL_PASSWORD:
         print("邮件服务未配置或未启用")
         return False
@@ -171,6 +216,11 @@ def send_email(to_email, subject, html_content):
 
 
 def generate_reset_token(user_id):
+    """
+    生成密码重置令牌
+    :param user_id: 用户ID
+    :return: 重置令牌
+    """
     import secrets
 
     token = secrets.token_urlsafe(32)
@@ -186,6 +236,9 @@ RESET_TOKENS = {}
 
 @app.route("/forgot-password", methods=["GET"])
 def forgot_password_page():
+    """
+    找回密码页面
+    """
     if "user_id" in session:
         if session.get("is_admin"):
             return redirect("/admin")
@@ -195,6 +248,10 @@ def forgot_password_page():
 
 @app.route("/reset-password/<token>", methods=["GET"])
 def reset_password_page(token):
+    """
+    重置密码页面
+    :param token: 重置令牌
+    """
     token_data = RESET_TOKENS.get(token)
     if not token_data:
         return render_template("reset_password.html", error="链接无效或已过期")
@@ -398,6 +455,10 @@ def send_reminder_emails():
 
 
 def start_reminder_scheduler():
+    """
+    启动邮件提醒定时任务
+    每隔1小时检查并发送邮件提醒
+    """
     global REMINDER_SCHEDULER_STARTED
     if REMINDER_SCHEDULER_STARTED:
         return
@@ -636,6 +697,10 @@ def update_reminder_time():
 
 @app.route("/")
 def index():
+    """
+    首页路由
+    显示待办事项管理页面
+    """
     if "user_id" not in session:
         return redirect("/login")
 
@@ -648,6 +713,10 @@ def index():
 @app.route("/api/todos", methods=["GET"])
 @login_required
 def get_todos():
+    """
+    获取待办事项列表API
+    根据日期筛选返回用户的待办事项
+    """
     try:
         date = request.args.get("date")
         user_id = session["user_id"]
@@ -687,6 +756,10 @@ def get_todos():
 @app.route("/api/todos", methods=["POST"])
 @login_required
 def add_todo():
+    """
+    添加待办事项API
+    创建新的待办事项
+    """
     data = request.get_json()
 
     if not data or not data.get("title"):
@@ -722,6 +795,10 @@ def add_todo():
 @app.route("/api/todos/<int:todo_id>", methods=["PUT"])
 @login_required
 def update_todo(todo_id):
+    """
+    更新待办事项API
+    修改待办事项的完成状态
+    """
     data = request.get_json()
     user_id = session["user_id"]
 
@@ -772,6 +849,10 @@ def update_todo(todo_id):
 @app.route("/api/todos/<int:todo_id>", methods=["DELETE"])
 @login_required
 def delete_todo(todo_id):
+    """
+    删除待办事项API
+    删除指定的待办事项
+    """
     user_id = session["user_id"]
     conn = get_db_connection()
     cursor = conn.execute(
@@ -788,6 +869,10 @@ def delete_todo(todo_id):
 
 @app.route("/admin")
 def admin_page():
+    """
+    管理后台页面
+    显示用户管理和系统设置
+    """
     if "user_id" not in session:
         return redirect("/login")
 
