@@ -339,8 +339,8 @@ def send_reminder_emails():
             continue
 
         todos = conn.execute(
-            "SELECT * FROM todos WHERE user_id = ? AND created_date = ? AND completed = 0",
-            (user["id"], current_date),
+            "SELECT * FROM todos WHERE user_id = ? AND completed = 0 ORDER BY created_date DESC",
+            (user["id"],),
         ).fetchall()
 
         if todos:
@@ -368,7 +368,7 @@ def send_reminder_emails():
                     </div>
                     <div class="content">
                         <p class="greeting">你好，{user['username']}！</p>
-                        <p>今天是 {current_date}，你还有 <strong>{len(todos)}</strong> 个待办事项未完成：</p>
+                        <p>你共有 <strong>{len(todos)}</strong> 个待办事项未完成：</p>
                         <div class="todo-list">
                             {"".join([f'<div class="todo-item">{todo["title"]}</div>' for todo in todos])}
                         </div>
@@ -1067,14 +1067,14 @@ def send_reminder_now():
     current_date = now.strftime("%Y-%m-%d")
 
     todos = conn.execute(
-        "SELECT * FROM todos WHERE user_id = ? AND created_date = ? AND completed = 0",
-        (user["id"], current_date),
+        "SELECT * FROM todos WHERE user_id = ? AND completed = 0 ORDER BY created_date DESC",
+        (user["id"],),
     ).fetchall()
 
     conn.close()
 
     if not todos:
-        return jsonify({"message": "今天没有未完成的待办事项"})
+        return jsonify({"message": "没有未完成的待办事项"})
 
     html_content = f"""
     <html>
