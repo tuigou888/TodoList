@@ -3,6 +3,11 @@
 功能：用户注册登录、待办事项管理、邮件提醒、管理后台
 """
 
+import os
+
+# 设置时区为中国标准时间
+os.environ["TZ"] = "Asia/Shanghai"
+
 from flask import Flask, render_template, request, jsonify, session, redirect, url_for
 from flask_session import Session
 import sqlite3
