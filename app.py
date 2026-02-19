@@ -11,7 +11,7 @@ os.environ["TZ"] = "Asia/Shanghai"
 from flask import Flask, render_template, request, jsonify, session, redirect, url_for
 from flask_session import Session
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timedelta
 from functools import wraps
 import hashlib
 import smtplib
@@ -364,7 +364,36 @@ def reset_password():
     return jsonify({"message": "密码重置成功"})
 
 
+def format_time_ago(created_at_str):
+    """
+    格式化时间差，显示已过去多久
+    """
+    try:
+        created_at = datetime.strptime(created_at_str, "%Y-%m-%d %H:%M:%S")
+        now = datetime.now()
+        diff = now - created_at
+
+        days = diff.days
+        hours = diff.seconds // 3600
+        minutes = (diff.seconds % 3600) // 60
+
+        if days > 0:
+            return f"{days}天前"
+        elif hours > 0:
+            return f"{hours}小时前"
+        elif minutes > 0:
+            return f"{minutes}分钟前"
+        else:
+            return "刚刚"
+    except:
+        return "未知"
+
+
 def send_reminder_emails():
+    """
+    发送邮件提醒
+    每天7:00-23:00每小时检查一次，通知用户未完成的待办事项
+    """
     global REMINDER_SENT_TODAY
 
     if not Config.MAIL_ENABLED:
@@ -375,18 +404,19 @@ def send_reminder_emails():
     conn = get_db_connection()
     now = datetime.now()
     current_date = now.strftime("%Y-%m-%d")
-
-    last_reset = REMINDER_SENT_TODAY.get("date", "")
-    if last_reset != current_date:
-        REMINDER_SENT_TODAY = {"date": current_date}
-        print("新的一天，重置发送记录")
-
     current_hour = now.hour
 
+    # 检查是否在通知时间范围内 (7:00-23:00)
     if current_hour < 7 or current_hour > 23:
         print(f"当前时间 {current_hour}:00 不在通知时间范围内 (7:00-23:00)")
         conn.close()
         return
+
+    # 新的一天，重置发送记录
+    last_reset = REMINDER_SENT_TODAY.get("date", "")
+    if last_reset != current_date:
+        REMINDER_SENT_TODAY = {"date": current_date}
+        print("新的一天，重置发送记录")
 
     users = conn.execute(
         "SELECT * FROM users WHERE email IS NOT NULL AND email != ''"
@@ -400,13 +430,27 @@ def send_reminder_emails():
         if REMINDER_SENT_TODAY.get(sent_key):
             continue
 
+        # 获取未完成的待办事项
         todos = conn.execute(
-            "SELECT * FROM todos WHERE user_id = ? AND completed = 0 ORDER BY created_date DESC",
+            "SELECT * FROM todos WHERE user_id = ? AND completed = 0 ORDER BY created_at DESC",
             (user["id"],),
         ).fetchall()
 
         if todos:
-            todo_list = "\n".join([f"• {todo['title']}" for todo in todos])
+            # 构建待办事项列表，包含创建时间和已过去时间
+            todo_items_html = ""
+            for todo in todos:
+                created_at = todo["created_at"]
+                time_ago = format_time_ago(created_at)
+                todo_items_html += f"""
+                <div class="todo-item">
+                    <div class="todo-title">{todo["title"]}</div>
+                    <div class="todo-meta">
+                        <span class="todo-date">创建于: {created_at}</span>
+                        <span class="time-ago">已过去: {time_ago}</span>
+                    </div>
+                </div>
+                """
 
             html_content = f"""
             <html>
@@ -418,9 +462,14 @@ def send_reminder_emails():
                     .content {{ background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px; }}
                     .greeting {{ font-size: 24px; margin-bottom: 20px; }}
                     .todo-list {{ background: white; padding: 20px; border-radius: 8px; margin: 20px 0; }}
-                    .todo-item {{ padding: 10px 0; border-bottom: 1px solid #eee; }}
+                    .todo-item {{ padding: 15px 0; border-bottom: 1px solid #eee; }}
                     .todo-item:last-child {{ border-bottom: none; }}
+                    .todo-title {{ font-weight: 600; font-size: 16px; margin-bottom: 8px; }}
+                    .todo-meta {{ font-size: 13px; color: #666; }}
+                    .todo-date {{ margin-right: 15px; }}
+                    .time-ago {{ color: #e74c3c; font-weight: 500; }}
                     .footer {{ text-align: center; color: #999; margin-top: 30px; font-size: 12px; }}
+                    .notification-time {{ background: #fff3cd; padding: 10px; border-radius: 6px; margin-bottom: 20px; font-size: 14px; color: #856404; }}
                 </style>
             </head>
             <body>
@@ -430,21 +479,29 @@ def send_reminder_emails():
                     </div>
                     <div class="content">
                         <p class="greeting">你好，{user['username']}！</p>
-                        <p>你共有 <strong>{len(todos)}</strong> 个待办事项未完成：</p>
-                        <div class="todo-list">
-                            {"".join([f'<div class="todo-item">{todo["title"]}</div>' for todo in todos])}
+                        <div class="notification-time">
+                            ⏰ 当前时间: {now.strftime("%Y-%m-%d %H:%M")} | 提醒时段: 07:00-23:00
                         </div>
-                        <p style="margin-top: 20px;">点击 <a href="http://localhost:5145">这里</a> 查看和管理你的待办事项。</p>
+                        <p>您共有 <strong>{len(todos)}</strong> 个待办事项未完成：</p>
+                        <div class="todo-list">
+                            {todo_items_html}
+                        </div>
+                        <p style="margin-top: 20px;">点击 <a href="http://localhost:5145">这里</a> 查看和管理您的待办事项。</p>
                     </div>
                     <div class="footer">
                         <p>此邮件由系统自动发送，请勿回复。</p>
+                        <p>每日提醒时间: 07:00 - 23:00 (每小时检查一次)</p>
                     </div>
                 </div>
             </body>
             </html>
             """
 
-            send_email(user["email"], f"待办事项提醒 - {current_date}", html_content)
+            send_email(
+                user["email"],
+                f"待办事项提醒 - {current_date} {current_hour}:00",
+                html_content,
+            )
             sent_count += 1
             REMINDER_SENT_TODAY[sent_key] = True
             print(
