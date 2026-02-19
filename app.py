@@ -1067,6 +1067,46 @@ def create_user():
         return jsonify({"error": "创建用户失败"}), 500
 
 
+@app.route("/api/admin/users/<int:user_id>/password", methods=["PUT"])
+@admin_required
+def reset_user_password(user_id):
+    """
+    管理员重置用户密码
+    """
+    data = request.get_json()
+
+    if not data or not data.get("password"):
+        return jsonify({"error": "请输入新密码"}), 400
+
+    new_password = data["password"]
+
+    if len(new_password) < 6:
+        return jsonify({"error": "密码至少需要6个字符"}), 400
+
+    conn = get_db_connection()
+    try:
+        user = conn.execute(
+            "SELECT id, username FROM users WHERE id = ?", (user_id,)
+        ).fetchone()
+
+        if not user:
+            conn.close()
+            return jsonify({"error": "用户不存在"}), 404
+
+        hashed_password = hash_password(new_password)
+        conn.execute(
+            "UPDATE users SET password = ? WHERE id = ?",
+            (hashed_password, user_id),
+        )
+        conn.commit()
+        conn.close()
+
+        return jsonify({"message": f"用户 {user['username']} 的密码已重置"})
+    except Exception as e:
+        conn.close()
+        return jsonify({"error": "重置密码失败"}), 500
+
+
 @app.route("/api/admin/users/<int:user_id>", methods=["DELETE"])
 @admin_required
 def delete_user(user_id):

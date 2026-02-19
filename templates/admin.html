@@ -247,6 +247,21 @@
             background: #E53E3E;
         }
 
+        .btn-reset {
+            background: #ED8936;
+            color: white;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 12px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-reset:hover {
+            background: #DD6B20;
+        }
+
         .pagination {
             display: flex;
             justify-content: center;
@@ -900,6 +915,7 @@
                     <td>${user.last_login_at ? formatDateTime(user.last_login_at) : '从未登录'}</td>
                     <td>
                         <button class="btn-view" onclick="viewUser(${user.id})">查看</button>
+                        <button class="btn-reset" onclick="resetPassword(${user.id})">重置密码</button>
                         <button class="btn-delete" onclick="deleteUser(${user.id})">删除</button>
                     </td>
                 </tr>
@@ -1124,6 +1140,32 @@
                 }
             } catch (error) {
                 showToast('删除失败，请稍后重试', 'error');
+            }
+        }
+
+        async function resetPassword(userId) {
+            const newPassword = prompt('请输入新密码（至少6位）：');
+            if (!newPassword || newPassword.length < 6) {
+                showToast('密码长度至少6位', 'error');
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/admin/users/${userId}/password`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ password: newPassword })
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    showToast(result.message || '密码重置成功', 'success');
+                } else {
+                    showToast(result.error || '重置失败', 'error');
+                }
+            } catch (error) {
+                showToast('重置失败，请稍后重试', 'error');
             }
         }
 
