@@ -42,6 +42,9 @@ Session(app)
 # 数据库文件名
 DB_NAME = "todos.db"
 
+# 启动邮件提醒定时任务（在 Gunicorn 环境下也会执行）
+start_reminder_scheduler()
+
 # 邮件提醒定时任务状态
 REMINDER_SCHEDULER_STARTED = False  # 定时任务是否已启动
 REMINDER_SENT_TODAY = {}  # 记录今日已发送的邮件（避免重复发送）
@@ -477,7 +480,7 @@ def start_reminder_scheduler():
             except Exception as e:
                 print(f"定时任务执行失败: {e}")
 
-            time.sleep(60)
+            time.sleep(3600)
 
     thread = threading.Thread(target=scheduler, daemon=True)
     thread.start()
