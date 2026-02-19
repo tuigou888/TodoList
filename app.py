@@ -724,15 +724,24 @@ def get_todos():
     """
     try:
         date = request.args.get("date")
+        view = request.args.get("view", "today")  # today 或 all
         user_id = session["user_id"]
         conn = get_db_connection()
 
         if date:
+            # 指定日期的查询
             todos = conn.execute(
                 "SELECT * FROM todos WHERE created_date = ? AND user_id = ? ORDER BY created_at DESC",
                 (date, user_id),
             ).fetchall()
+        elif view == "all":
+            # 所有待办（已完成 + 未完成）
+            todos = conn.execute(
+                "SELECT * FROM todos WHERE user_id = ? ORDER BY created_at DESC",
+                (user_id,),
+            ).fetchall()
         else:
+            # 默认只返回未完成的
             todos = conn.execute(
                 "SELECT * FROM todos WHERE user_id = ? AND completed = 0 ORDER BY created_at DESC",
                 (user_id,),

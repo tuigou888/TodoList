@@ -843,7 +843,9 @@
             try {
                 let url = '/api/todos';
                 if (viewMode === 'today') {
-                    url += `?date=${currentDate}`;
+                    url += `?view=today&date=${currentDate}`;
+                } else {
+                    url += `?view=all`;
                 }
                 const response = await fetch(url);
                 if (!response.ok) {
