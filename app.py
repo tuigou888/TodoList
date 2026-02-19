@@ -42,9 +42,6 @@ Session(app)
 # 数据库文件名
 DB_NAME = "todos.db"
 
-# 启动邮件提醒定时任务（在 Gunicorn 环境下也会执行）
-start_reminder_scheduler()
-
 # 邮件提醒定时任务状态
 REMINDER_SCHEDULER_STARTED = False  # 定时任务是否已启动
 REMINDER_SENT_TODAY = {}  # 记录今日已发送的邮件（避免重复发送）
@@ -1212,6 +1209,16 @@ def send_reminder_now():
 
 if __name__ == "__main__":
     init_db()
-    if not os.environ.get("WERKZEUG_RUN_MAIN"):
-        start_reminder_scheduler()
     app.run(debug=True, host="0.0.0.0", port=5145)
+
+
+# Gunicorn 启动钩子（在 Gunicorn 环境下启动定时任务）
+def on_starting(server):
+    """Gunicorn 启动时调用"""
+    init_db()
+    start_reminder_scheduler()
+
+
+def when_ready(server):
+    """Gunicorn 准备好接受请求时调用"""
+    print("Gunicorn 已就绪")
