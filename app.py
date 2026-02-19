@@ -128,8 +128,8 @@ def init_db():
             title TEXT NOT NULL,
             description TEXT,
             completed INTEGER DEFAULT 0,
-            created_date DATE DEFAULT (DATE('now', 'localtime')),
-            created_at TIMESTAMP DEFAULT (DATETIME('now', 'localtime')),
+            created_date DATE,
+            created_at TIMESTAMP,
             user_id INTEGER NOT NULL,
             FOREIGN KEY (user_id) REFERENCES users(id)
         )
@@ -840,10 +840,14 @@ def add_todo():
     description = data.get("description", "").strip()
     user_id = session["user_id"]
 
+    now = datetime.now()
+    created_date = now.strftime("%Y-%m-%d")
+    created_at = now.strftime("%Y-%m-%d %H:%M:%S")
+
     conn = get_db_connection()
     cursor = conn.execute(
-        "INSERT INTO todos (title, description, user_id, created_date) VALUES (?, ?, ?, ?)",
-        (title, description, user_id, datetime.now().strftime("%Y-%m-%d")),
+        "INSERT INTO todos (title, description, user_id, created_date, created_at) VALUES (?, ?, ?, ?, ?)",
+        (title, description, user_id, created_date, created_at),
     )
     conn.commit()
     todo_id = cursor.lastrowid
@@ -856,7 +860,8 @@ def add_todo():
                 "title": title,
                 "description": description,
                 "completed": False,
-                "created_date": datetime.now().strftime("%Y-%m-%d"),
+                "created_date": created_date,
+                "created_at": created_at,
             }
         ),
         201,
