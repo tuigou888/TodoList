@@ -4,6 +4,15 @@
 """
 
 import os
+import logging
+
+# 配置日志
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    handlers=[logging.StreamHandler()],
+)
+logger = logging.getLogger(__name__)
 
 # 设置时区为中国标准时间
 os.environ["TZ"] = "Asia/Shanghai"
@@ -20,7 +29,6 @@ from email.mime.multipart import MIMEMultipart
 from email.utils import formataddr
 import threading
 import time
-import os
 from dotenv import load_dotenv
 
 # 加载环境变量
@@ -196,7 +204,7 @@ def send_email(to_email, subject, html_content):
     :return: 发送成功返回 True，失败返回 False
     """
     if not Config.MAIL_ENABLED or not Config.MAIL_USERNAME or not Config.MAIL_PASSWORD:
-        print("邮件服务未配置或未启用")
+        logger.warning("邮件服务未配置或未启用")
         return False
 
     try:
@@ -213,10 +221,10 @@ def send_email(to_email, subject, html_content):
             server.login(Config.MAIL_USERNAME, Config.MAIL_PASSWORD)
             server.send_message(msg)
 
-        print(f"邮件已发送至: {to_email}")
+        logger.info(f"邮件已发送至: {to_email}")
         return True
     except Exception as e:
-        print(f"邮件发送失败: {e}")
+        logger.error(f"邮件发送失败: {e}")
         return False
 
 
@@ -399,7 +407,7 @@ def send_reminder_emails():
     if not Config.MAIL_ENABLED:
         return
 
-    print("开始发送提醒邮件...")
+    logger.info("开始发送提醒邮件...")
 
     conn = get_db_connection()
     now = datetime.now()
@@ -408,7 +416,7 @@ def send_reminder_emails():
 
     # 检查是否在通知时间范围内 (7:00-23:00)
     if current_hour < 7 or current_hour > 23:
-        print(f"当前时间 {current_hour}:00 不在通知时间范围内 (7:00-23:00)")
+        logger.info(f"当前时间 {current_hour}:00 不在通知时间范围内 (7:00-23:00)")
         conn.close()
         return
 
@@ -416,7 +424,7 @@ def send_reminder_emails():
     last_reset = REMINDER_SENT_TODAY.get("date", "")
     if last_reset != current_date:
         REMINDER_SENT_TODAY = {"date": current_date}
-        print("新的一天，重置发送记录")
+        logger.info("新的一天，重置发送记录")
 
     users = conn.execute(
         "SELECT * FROM users WHERE email IS NOT NULL AND email != ''"
@@ -504,16 +512,16 @@ def send_reminder_emails():
             )
             sent_count += 1
             REMINDER_SENT_TODAY[sent_key] = True
-            print(
+            logger.info(
                 f"✓ 已发送邮件给用户 {user['username']} (提醒时间: {current_hour}:00)"
             )
 
     conn.close()
 
     if sent_count > 0:
-        print(f"共发送 {sent_count} 封提醒邮件")
+        logger.info(f"共发送 {sent_count} 封提醒邮件")
     else:
-        print("没有需要发送的提醒邮件")
+        logger.info("没有需要发送的提醒邮件")
 
 
 def start_reminder_scheduler():
@@ -532,13 +540,13 @@ def start_reminder_scheduler():
             try:
                 send_reminder_emails()
             except Exception as e:
-                print(f"定时任务执行失败: {e}")
+                logger.error(f"定时任务执行失败: {e}")
 
             time.sleep(3600)
 
     thread = threading.Thread(target=scheduler, daemon=True)
     thread.start()
-    print("邮件提醒定时任务已启动")
+    logger.info("邮件提醒定时任务已启动")
 
 
 @app.route("/login")
@@ -1326,10 +1334,11 @@ if __name__ == "__main__":
 # Gunicorn 启动钩子（在 Gunicorn 环境下启动定时任务）
 def on_starting(server):
     """Gunicorn 启动时调用"""
+    logger.info("Gunicorn 正在启动...")
     init_db()
     start_reminder_scheduler()
 
 
 def when_ready(server):
     """Gunicorn 准备好接受请求时调用"""
-    print("Gunicorn 已就绪")
+    logger.info("Gunicorn 已就绪")
