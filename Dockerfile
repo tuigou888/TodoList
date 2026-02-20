@@ -26,4 +26,4 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 EXPOSE 5145
 
-CMD ["gunicorn", "--bind", "0.0.0.0:5145", "--workers", "4", "--timeout", "120", "app:app"]
+CMD ["gunicorn", "-c", "gunicorn.conf.py", "app:app"]
