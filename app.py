@@ -400,7 +400,7 @@ def format_time_ago(created_at_str):
 def send_reminder_emails():
     """
     发送邮件提醒
-    每天7:00-23:00每小时检查一次，通知用户未完成的待办事项
+    每天7:30-21:30每小时检查一次，通知用户未完成的待办事项
     """
     global REMINDER_SENT_TODAY
 
@@ -413,10 +413,17 @@ def send_reminder_emails():
     now = datetime.now()
     current_date = now.strftime("%Y-%m-%d")
     current_hour = now.hour
+    current_minute = now.minute
 
-    # 检查是否在通知时间范围内 (7:00-23:00)
-    if current_hour < 7 or current_hour > 23:
-        logger.info(f"当前时间 {current_hour}:00 不在通知时间范围内 (7:00-23:00)")
+    # 检查是否在通知时间范围内 (7:30-21:30)
+    # 7:30 开始，21:30 结束
+    is_before_start = current_hour < 7 or (current_hour == 7 and current_minute < 30)
+    is_after_end = current_hour > 21 or (current_hour == 21 and current_minute > 30)
+
+    if is_before_start or is_after_end:
+        logger.info(
+            f"当前时间 {current_hour}:{current_minute:02d} 不在通知时间范围内 (7:30-21:30)"
+        )
         conn.close()
         return
 
@@ -537,12 +544,29 @@ def start_reminder_scheduler():
 
     def scheduler():
         while True:
+            now = datetime.now()
+            current_minute = now.minute
+            current_second = now.second
+
+            # 计算距离下一个整点（北京时间）的秒数
+            # 如果现在是 10:15:30，距离 11:00:00 还有 (44 * 60 + 30) = 2670 秒
+            seconds_to_next_hour = (59 - current_minute) * 60 + (60 - current_second)
+
+            logger.info(
+                f"当前时间: {now.strftime('%H:%M:%S')}，距离下一个整点还有 {seconds_to_next_hour} 秒"
+            )
+
+            # 等待到下一个整点
+            time.sleep(seconds_to_next_hour)
+
+            # 到达整点，执行邮件发送
             try:
                 send_reminder_emails()
             except Exception as e:
                 logger.error(f"定时任务执行失败: {e}")
 
-            time.sleep(3600)
+            # 等待1分钟，避免在同一分钟内重复执行
+            time.sleep(60)
 
     thread = threading.Thread(target=scheduler, daemon=True)
     thread.start()
