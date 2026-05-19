@@ -4,67 +4,123 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>每日待办事项</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;600;700&family=Noto+Serif+SC:wght@400;600;700&display=swap" rel="stylesheet">
     <style>
         :root {
-            --primary: #6366f1;
-            --primary-dark: #4f46e5;
-            --primary-light: #818cf8;
-            --secondary: #06b6d4;
-            --success: #10b981;
-            --warning: #f59e0b;
-            --danger: #ef4444;
-            --gray-50: #f9fafb;
-            --gray-100: #f3f4f6;
-            --gray-200: #e5e7eb;
-            --gray-300: #d1d5db;
-            --gray-400: #9ca3af;
-            --gray-500: #6b7280;
-            --gray-600: #4b5563;
-            --gray-700: #374151;
-            --gray-800: #1f2937;
-            --gray-900: #111827;
-            --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
-            --shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
-            --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-            --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
-            --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
-            --radius-sm: 6px;
-            --radius: 10px;
+            --cream: #FAF8F5;
+            --white: #FFFFFF;
+            --charcoal: #1A1A2E;
+            --terracotta: #C4664A;
+            --terracotta-hover: #A8553A;
+            --sage: #7A9B76;
+            --gray-100: #F5F0EB;
+            --gray-200: #E8E0D8;
+            --gray-300: #D4C8BC;
+            --gray-400: #A89888;
+            --gray-500: #7A6E62;
+            --gray-600: #5A5047;
+            --gray-700: #3D3530;
+            --gray-800: #2A2420;
+            --shadow-sm: 0 1px 4px rgba(42,36,32,0.04);
+            --shadow: 0 2px 12px rgba(42,36,32,0.06);
+            --shadow-md: 0 4px 20px rgba(42,36,32,0.08);
+            --shadow-lg: 0 8px 32px rgba(42,36,32,0.10);
+            --radius: 12px;
             --radius-md: 14px;
-            --radius-lg: 18px;
-            --radius-xl: 24px;
+            --radius-lg: 16px;
+            --radius-xl: 20px;
         }
 
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
 
         body {
-            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            background-attachment: fixed;
+            font-family: 'Noto Sans SC', sans-serif;
+            background: var(--cream);
             min-height: 100vh;
             padding: 20px;
-            color: var(--gray-800);
+            color: var(--charcoal);
+            position: relative;
+            overflow-x: hidden;
+        }
+
+        /* Noise texture overlay */
+        body::before {
+            content: '';
+            position: fixed;
+            inset: 0;
+            pointer-events: none;
+            z-index: 0;
+            opacity: 0.35;
+            background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+            background-size: 200px 200px;
+        }
+
+        /* Decorative floating shapes */
+        body::after {
+            content: '';
+            position: fixed;
+            top: 10%;
+            right: 8%;
+            width: 320px;
+            height: 320px;
+            border-radius: 50%;
+            background: radial-gradient(circle, rgba(196,102,74,0.06) 0%, transparent 70%);
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        .deco-circle-1 {
+            position: fixed;
+            bottom: 5%;
+            left: 3%;
+            width: 240px;
+            height: 240px;
+            border-radius: 50%;
+            background: radial-gradient(circle, rgba(122,155,118,0.06) 0%, transparent 70%);
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        .deco-circle-2 {
+            position: fixed;
+            top: 40%;
+            left: 60%;
+            width: 180px;
+            height: 180px;
+            border-radius: 50%;
+            background: radial-gradient(circle, rgba(212,200,188,0.12) 0%, transparent 70%);
+            pointer-events: none;
+            z-index: 0;
         }
 
         .container {
             max-width: 680px;
             margin: 0 auto;
+            position: relative;
+            z-index: 1;
+        }
+
+        /* Page load animation */
+        .header, .add-form, .todo-list {
+            animation: fadeSlideUp 0.5s ease-out both;
+        }
+        .add-form { animation-delay: 0.1s; }
+        .todo-list { animation-delay: 0.2s; }
+
+        @keyframes fadeSlideUp {
+            from { opacity: 0; transform: translateY(16px); }
+            to { opacity: 1; transform: translateY(0); }
         }
 
         .header {
-            background: rgba(255, 255, 255, 0.95);
-            backdrop-filter: blur(20px);
-            -webkit-backdrop-filter: blur(20px);
-            color: var(--gray-800);
+            background: var(--white);
             padding: 28px;
             border-radius: var(--radius-xl);
-            margin-bottom: 24px;
-            box-shadow: var(--shadow-xl);
-            border: 1px solid rgba(255, 255, 255, 0.3);
+            margin-bottom: 20px;
+            box-shadow: var(--shadow);
+            border: 1px solid rgba(212,200,188,0.4);
         }
 
         .header-top {
@@ -84,13 +140,32 @@
         }
 
         .username {
+            font-family: 'Noto Serif SC', serif;
             font-size: 15px;
             font-weight: 600;
-            color: var(--gray-700);
-            background: linear-gradient(135deg, var(--primary), var(--secondary));
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
+            color: var(--terracotta);
+        }
+
+        .reminder-info {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 12px;
+            color: var(--gray-500);
+            background: var(--gray-100);
+            padding: 6px 12px;
+            border-radius: var(--radius);
+            border: 1px solid var(--gray-200);
+        }
+
+        .reminder-info::before {
+            content: '';
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%237A6E62' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9'/%3E%3Cpath d='M13.73 21a2 2 0 0 1-3.46 0'/%3E%3C/svg%3E");
+            background-size: contain;
+            background-repeat: no-repeat;
         }
 
         .btn-logout {
@@ -102,31 +177,15 @@
             font-size: 13px;
             font-weight: 500;
             cursor: pointer;
-            transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+            transition: all 0.2s ease;
+            font-family: 'Noto Sans SC', sans-serif;
         }
 
         .btn-logout:hover {
-            background: var(--danger);
+            background: var(--terracotta);
             color: white;
             transform: translateY(-1px);
-            box-shadow: var(--shadow-md);
-        }
-
-        .reminder-info {
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            font-size: 12px;
-            color: var(--gray-500);
-            background: var(--gray-50);
-            padding: 6px 12px;
-            border-radius: var(--radius);
-            border: 1px solid var(--gray-200);
-        }
-
-        .reminder-info::before {
-            content: '🔔';
-            font-size: 11px;
+            box-shadow: var(--shadow-sm);
         }
 
         .date-picker {
@@ -154,20 +213,20 @@
             font-size: 13px;
             font-weight: 500;
             cursor: pointer;
-            border-radius: var(--radius-sm);
-            transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+            border-radius: 8px;
+            transition: all 0.2s ease;
+            font-family: 'Noto Sans SC', sans-serif;
         }
 
         .view-mode-btn.active {
-            background: white;
-            color: var(--primary);
+            background: var(--white);
+            color: var(--terracotta);
             font-weight: 600;
             box-shadow: var(--shadow-sm);
         }
 
         .view-mode-btn:hover:not(.active) {
             color: var(--gray-700);
-            background: rgba(255, 255, 255, 0.5);
         }
 
         .date-display {
@@ -177,7 +236,7 @@
         }
 
         .date-input {
-            background: var(--gray-50);
+            background: var(--gray-100);
             border: 2px solid var(--gray-200);
             color: var(--gray-700);
             padding: 10px 14px;
@@ -186,24 +245,26 @@
             font-weight: 500;
             cursor: pointer;
             transition: all 0.2s;
+            font-family: 'Noto Sans SC', sans-serif;
         }
 
         .date-input:hover {
-            border-color: var(--primary-light);
+            border-color: var(--gray-300);
         }
 
         .date-input:focus {
             outline: none;
-            border-color: var(--primary);
-            box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+            border-color: var(--terracotta);
+            box-shadow: 0 0 0 3px rgba(196,102,74,0.1);
         }
 
         .header h1 {
+            font-family: 'Noto Serif SC', serif;
             font-size: 26px;
             font-weight: 700;
             color: var(--gray-800);
             margin-bottom: 16px;
-            letter-spacing: -0.5px;
+            letter-spacing: 0.5px;
         }
 
         .stats {
@@ -218,23 +279,20 @@
             align-items: center;
             gap: 8px;
             padding: 8px 16px;
-            background: var(--gray-50);
+            background: var(--gray-100);
             border-radius: var(--radius);
             transition: all 0.2s;
         }
 
         .stat-item:hover {
-            background: var(--gray-100);
-            transform: translateY(-1px);
+            background: var(--gray-200);
         }
 
         .stat-item .count {
+            font-family: 'Noto Serif SC', serif;
             font-weight: 700;
             font-size: 20px;
-            background: linear-gradient(135deg, var(--primary), var(--secondary));
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
+            color: var(--terracotta);
         }
 
         .stat-item span:last-child {
@@ -244,17 +302,16 @@
         }
 
         .add-form {
-            background: rgba(255, 255, 255, 0.95);
-            backdrop-filter: blur(20px);
-            -webkit-backdrop-filter: blur(20px);
+            background: var(--white);
             padding: 28px;
             border-radius: var(--radius-xl);
-            margin-bottom: 24px;
-            box-shadow: var(--shadow-lg);
-            border: 1px solid rgba(255, 255, 255, 0.3);
+            margin-bottom: 20px;
+            box-shadow: var(--shadow);
+            border: 1px solid rgba(212,200,188,0.4);
         }
 
         .add-form h2 {
+            font-family: 'Noto Serif SC', serif;
             font-size: 16px;
             color: var(--gray-700);
             margin-bottom: 20px;
@@ -277,7 +334,8 @@
             border-radius: var(--radius-md);
             font-size: 15px;
             transition: all 0.2s;
-            background: var(--gray-50);
+            background: var(--gray-100);
+            font-family: 'Noto Sans SC', sans-serif;
         }
 
         .input-group input:hover {
@@ -286,9 +344,9 @@
 
         .input-group input:focus {
             outline: none;
-            border-color: var(--primary);
-            background: white;
-            box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.1);
+            border-color: var(--terracotta);
+            background: var(--white);
+            box-shadow: 0 0 0 4px rgba(196,102,74,0.08);
         }
 
         .input-group input::placeholder {
@@ -296,7 +354,7 @@
         }
 
         .btn-add {
-            background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+            background: var(--terracotta);
             color: white;
             border: none;
             padding: 16px 28px;
@@ -304,17 +362,18 @@
             font-size: 15px;
             font-weight: 600;
             cursor: pointer;
-            transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-            box-shadow: 0 4px 14px rgba(99, 102, 241, 0.35);
+            transition: all 0.2s ease;
             display: flex;
             align-items: center;
             justify-content: center;
             gap: 8px;
+            font-family: 'Noto Sans SC', sans-serif;
         }
 
         .btn-add:hover {
+            background: var(--terracotta-hover);
             transform: translateY(-2px);
-            box-shadow: 0 6px 20px rgba(99, 102, 241, 0.45);
+            box-shadow: var(--shadow-md);
         }
 
         .btn-add:active {
@@ -322,13 +381,11 @@
         }
 
         .todo-list {
-            background: rgba(255, 255, 255, 0.95);
-            backdrop-filter: blur(20px);
-            -webkit-backdrop-filter: blur(20px);
+            background: var(--white);
             border-radius: var(--radius-xl);
-            box-shadow: var(--shadow-lg);
+            box-shadow: var(--shadow);
             overflow: hidden;
-            border: 1px solid rgba(255, 255, 255, 0.3);
+            border: 1px solid rgba(212,200,188,0.4);
         }
 
         .todo-list-header {
@@ -337,10 +394,11 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
-            background: linear-gradient(to right, var(--gray-50), white);
+            background: var(--gray-100);
         }
 
         .todo-list-header h2 {
+            font-family: 'Noto Serif SC', serif;
             font-size: 16px;
             color: var(--gray-700);
             font-weight: 600;
@@ -354,22 +412,10 @@
             overflow-y: auto;
         }
 
-        .todo-items::-webkit-scrollbar {
-            width: 6px;
-        }
-
-        .todo-items::-webkit-scrollbar-track {
-            background: var(--gray-100);
-        }
-
-        .todo-items::-webkit-scrollbar-thumb {
-            background: var(--gray-300);
-            border-radius: 3px;
-        }
-
-        .todo-items::-webkit-scrollbar-thumb:hover {
-            background: var(--gray-400);
-        }
+        .todo-items::-webkit-scrollbar { width: 6px; }
+        .todo-items::-webkit-scrollbar-track { background: var(--gray-100); }
+        .todo-items::-webkit-scrollbar-thumb { background: var(--gray-300); border-radius: 3px; }
+        .todo-items::-webkit-scrollbar-thumb:hover { background: var(--gray-400); }
 
         .todo-item {
             padding: 20px 28px;
@@ -377,29 +423,20 @@
             display: flex;
             align-items: flex-start;
             gap: 16px;
-            transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+            transition: all 0.2s ease;
             animation: slideIn 0.3s ease-out;
         }
 
         @keyframes slideIn {
-            from {
-                opacity: 0;
-                transform: translateY(-10px);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
         }
 
         .todo-item:hover {
-            background: linear-gradient(to right, var(--gray-50), rgba(99, 102, 241, 0.03));
-            transform: translateX(4px);
+            background: var(--gray-100);
         }
 
-        .todo-item:last-child {
-            border-bottom: none;
-        }
+        .todo-item:last-child { border-bottom: none; }
 
         .todo-item.completed .todo-title {
             text-decoration: line-through;
@@ -415,25 +452,25 @@
             width: 24px;
             height: 24px;
             border: 2px solid var(--gray-300);
-            border-radius: 8px;
+            border-radius: 6px;
             cursor: pointer;
             display: flex;
             align-items: center;
             justify-content: center;
             flex-shrink: 0;
-            transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+            transition: all 0.2s ease;
             margin-top: 2px;
-            background: white;
+            background: var(--white);
         }
 
         .checkbox:hover {
-            border-color: var(--primary);
-            box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.1);
+            border-color: var(--terracotta);
+            box-shadow: 0 0 0 3px rgba(196,102,74,0.08);
         }
 
         .checkbox.checked {
-            background: linear-gradient(135deg, var(--success), #059669);
-            border-color: var(--success);
+            background: var(--sage);
+            border-color: var(--sage);
             animation: checkBounce 0.3s ease-out;
         }
 
@@ -453,10 +490,7 @@
             margin-bottom: 2px;
         }
 
-        .todo-content {
-            flex: 1;
-            min-width: 0;
-        }
+        .todo-content { flex: 1; min-width: 0; }
 
         .todo-title {
             font-size: 15px;
@@ -482,8 +516,13 @@
         }
 
         .todo-date::before {
-            content: '📅';
-            font-size: 11px;
+            content: '';
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23A89888' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='4' width='18' height='18' rx='2' ry='2'/%3E%3Cline x1='16' y1='2' x2='16' y2='6'/%3E%3Cline x1='8' y1='2' x2='8' y2='6'/%3E%3Cline x1='3' y1='10' x2='21' y2='10'/%3E%3C/svg%3E");
+            background-size: contain;
+            background-repeat: no-repeat;
         }
 
         .btn-delete {
@@ -494,13 +533,16 @@
             padding: 10px;
             border-radius: var(--radius);
             font-size: 16px;
-            transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+            transition: all 0.2s ease;
             opacity: 0.7;
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
 
         .btn-delete:hover {
-            background: #fee2e2;
-            color: var(--danger);
+            background: #FDE8E0;
+            color: var(--terracotta);
             opacity: 1;
             transform: scale(1.1);
         }
@@ -512,20 +554,19 @@
         }
 
         .empty-state-icon {
-            font-size: 64px;
             margin-bottom: 20px;
-            opacity: 0.8;
-            animation: float 3s ease-in-out infinite;
+            opacity: 0.5;
         }
 
-        @keyframes float {
-            0%, 100% { transform: translateY(0); }
-            50% { transform: translateY(-10px); }
+        .empty-state-icon svg {
+            width: 64px;
+            height: 64px;
         }
 
         .empty-state p {
             font-size: 16px;
             font-weight: 500;
+            color: var(--gray-500);
         }
 
         .empty-state .sub-text {
@@ -536,9 +577,9 @@
 
         .toast {
             position: fixed;
-            bottom: 28px;
+            top: 24px;
             left: 50%;
-            transform: translateX(-50%) translateY(100px);
+            transform: translateX(-50%) translateY(-100px);
             background: var(--gray-800);
             color: white;
             padding: 14px 28px;
@@ -548,10 +589,11 @@
             opacity: 0;
             transition: all 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55);
             z-index: 1000;
-            box-shadow: var(--shadow-xl);
+            box-shadow: var(--shadow-lg);
             display: flex;
             align-items: center;
             gap: 10px;
+            font-family: 'Noto Sans SC', sans-serif;
         }
 
         .toast.show {
@@ -559,130 +601,53 @@
             opacity: 1;
         }
 
-        .toast.error {
-            background: var(--danger);
-        }
+        .toast.error { background: #D4503A; }
+        .toast.success { background: var(--sage); }
 
-        .toast.success {
-            background: var(--success);
-        }
-
-        .toast::before {
-            font-size: 16px;
-        }
-
-        .toast.success::before {
-            content: '✓';
-        }
-
-        .toast.error::before {
-            content: '✕';
-        }
-
-        @media (max-width: 480px) {
-            body {
-                padding: 12px;
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            }
-
-            .container {
-                padding: 0;
-            }
-
-            .header {
-                padding: 20px;
-                border-radius: var(--radius-lg);
-            }
-
-            .header-top {
-                flex-direction: column;
-                gap: 12px;
-                align-items: flex-start;
-            }
-
-            .user-info {
-                width: 100%;
-                justify-content: space-between;
-            }
-
-            .header h1 {
-                font-size: 22px;
-            }
-
-            .stats {
-                flex-direction: row;
-                gap: 12px;
-            }
-
-            .stat-item {
-                flex: 1;
-                justify-content: center;
-            }
-
-            .add-form {
-                padding: 20px;
-                border-radius: var(--radius-lg);
-            }
-
-            .todo-item {
-                padding: 16px 20px;
-            }
-
-            .todo-list {
-                border-radius: var(--radius-lg);
-            }
-
-            .date-picker {
-                flex-direction: column;
-                align-items: stretch;
-            }
-
-            .view-mode-toggle {
-                justify-content: center;
-            }
-        }
-
-        @media (min-width: 481px) and (max-width: 768px) {
-            .header {
-                padding: 24px;
-            }
-
-            .header h1 {
-                font-size: 24px;
-            }
-
-            .add-form {
-                padding: 24px;
-            }
-        }
-
-        @media (min-width: 769px) {
-            .container {
-                padding: 20px;
-            }
-
-            .header {
-                padding: 32px;
-            }
-
-            .header h1 {
-                font-size: 28px;
-            }
-        }
+        .toast::before { font-size: 16px; }
+        .toast.success::before { content: '\2713'; }
+        .toast.error::before { content: '\2715'; }
 
         .todo-item.deleting {
             animation: slideOut 0.3s ease-out forwards;
         }
 
         @keyframes slideOut {
-            to {
-                opacity: 0;
-                transform: translateX(100px);
-            }
+            to { opacity: 0; transform: translateX(100px); }
+        }
+
+        @media (max-width: 480px) {
+            body { padding: 12px; }
+            .container { padding: 0; }
+            .header { padding: 20px; border-radius: var(--radius-lg); }
+            .header-top { flex-direction: column; gap: 12px; align-items: flex-start; }
+            .user-info { width: 100%; justify-content: space-between; }
+            .header h1 { font-size: 22px; }
+            .stats { flex-direction: row; gap: 12px; }
+            .stat-item { flex: 1; justify-content: center; }
+            .add-form { padding: 20px; border-radius: var(--radius-lg); }
+            .todo-item { padding: 16px 20px; }
+            .todo-list { border-radius: var(--radius-lg); }
+            .date-picker { flex-direction: column; align-items: stretch; }
+            .view-mode-toggle { justify-content: center; }
+        }
+
+        @media (min-width: 481px) and (max-width: 768px) {
+            .header { padding: 24px; }
+            .header h1 { font-size: 24px; }
+            .add-form { padding: 24px; }
+        }
+
+        @media (min-width: 769px) {
+            .container { padding: 20px; }
+            .header { padding: 32px; }
+            .header h1 { font-size: 28px; }
         }
     </style>
 </head>
 <body>
+    <div class="deco-circle-1"></div>
+    <div class="deco-circle-2"></div>
     <div class="container">
         <div class="header">
             <div class="header-top">
@@ -747,7 +712,17 @@
             </div>
             <div class="todo-items" id="todoItems">
                 <div class="empty-state">
-                    <div class="empty-state-icon">📝</div>
+                    <div class="empty-state-icon">
+                        <svg viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                            <rect x="12" y="8" width="40" height="48" rx="4" stroke-dasharray="4 3"/>
+                            <line x1="22" y1="22" x2="42" y2="22"/>
+                            <line x1="22" y1="30" x2="38" y2="30"/>
+                            <line x1="22" y1="38" x2="34" y2="38"/>
+                            <circle cx="44" cy="44" r="10" fill="var(--cream)" stroke-width="1.5"/>
+                            <line x1="44" y1="40" x2="44" y2="48"/>
+                            <line x1="40" y1="44" x2="48" y2="44"/>
+                        </svg>
+                    </div>
                     <p>暂无待办事项</p>
                 </div>
             </div>
@@ -876,7 +851,7 @@
                 container.innerHTML = `
                     <div class="empty-state">
                         <div class="empty-state-icon">
-                            <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                            <svg viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
                                 <path d="M9 11l3 3L22 4"></path>
                                 <path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"></path>
                             </svg>
@@ -894,7 +869,12 @@
                             ${todo.description ? `<div class="todo-description">${escapeHtml(todo.description)}</div>` : ''}
                             <div class="todo-date">${formatDateTime(todo.created_at)}</div>
                         </div>
-                        <button class="btn-delete" onclick="deleteTodo(${todo.id})" title="删除">🗑️</button>
+                        <button class="btn-delete" onclick="deleteTodo(${todo.id})" title="删除">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <polyline points="3 6 5 6 21 6"></polyline>
+                                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                            </svg>
+                        </button>
                     </div>
                 `).join('');
             }

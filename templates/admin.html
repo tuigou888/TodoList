@@ -4,32 +4,73 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>管理后台 - 每日待办事项</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;600;700&family=Noto+Serif+SC:wght@400;600;700&display=swap" rel="stylesheet">
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
+        :root {
+            --cream: #FAF8F5;
+            --white: #FFFFFF;
+            --charcoal: #1A1A2E;
+            --terracotta: #C4664A;
+            --terracotta-hover: #A8553A;
+            --sage: #7A9B76;
+            --sage-light: #E8F0E6;
+            --danger: #D4503A;
+            --danger-light: #FDE8E0;
+            --gray-100: #F5F0EB;
+            --gray-200: #E8E0D8;
+            --gray-300: #D4C8BC;
+            --gray-400: #A89888;
+            --gray-500: #7A6E62;
+            --gray-600: #5A5047;
+            --gray-700: #3D3530;
+            --gray-800: #2A2420;
+            --shadow-sm: 0 1px 4px rgba(42,36,32,0.04);
+            --shadow: 0 2px 12px rgba(42,36,32,0.06);
+            --shadow-md: 0 4px 20px rgba(42,36,32,0.08);
+            --shadow-lg: 0 8px 32px rgba(42,36,32,0.10);
+            --radius: 12px;
+            --radius-md: 14px;
+            --radius-lg: 16px;
         }
 
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-            background: #F5F7FA;
+            font-family: 'Noto Sans SC', sans-serif;
+            background: var(--cream);
             min-height: 100vh;
         }
 
+        body::before {
+            content: '';
+            position: fixed;
+            inset: 0;
+            pointer-events: none;
+            z-index: 0;
+            opacity: 0.3;
+            background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+            background-size: 200px 200px;
+        }
+
         .header {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: var(--gray-800);
             color: white;
             padding: 20px 30px;
             display: flex;
             justify-content: space-between;
             align-items: center;
-            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            box-shadow: var(--shadow-md);
+            position: relative;
+            z-index: 2;
         }
 
         .header h1 {
+            font-family: 'Noto Serif SC', serif;
             font-size: 24px;
             font-weight: 600;
+            letter-spacing: 0.5px;
         }
 
         .header-actions {
@@ -55,7 +96,7 @@
 
         .user-info .datetime .date {
             font-size: 12px;
-            opacity: 0.9;
+            opacity: 0.8;
         }
 
         .user-info .datetime .time {
@@ -64,32 +105,34 @@
         }
 
         .user-info .username {
-            background: rgba(255, 255, 255, 0.2);
+            background: rgba(255, 255, 255, 0.12);
             padding: 6px 12px;
-            border-radius: 6px;
+            border-radius: 8px;
             font-weight: 500;
         }
 
         .btn-logout {
-            background: rgba(255, 255, 255, 0.2);
+            background: rgba(255, 255, 255, 0.12);
             color: white;
             border: none;
             padding: 8px 16px;
-            border-radius: 6px;
+            border-radius: 8px;
             font-size: 14px;
             cursor: pointer;
-            text-decoration: none;
             transition: all 0.2s;
+            font-family: 'Noto Sans SC', sans-serif;
         }
 
         .btn-logout:hover {
-            background: #ef4444;
+            background: var(--danger);
         }
 
         .container {
             max-width: 1200px;
             margin: 0 auto;
             padding: 30px;
+            position: relative;
+            z-index: 1;
         }
 
         .toolbar {
@@ -110,69 +153,79 @@
         .search-box input {
             width: 100%;
             padding: 10px 16px;
-            border: 2px solid #E2E8F0;
-            border-radius: 8px;
+            border: 2px solid var(--gray-200);
+            border-radius: var(--radius);
             font-size: 14px;
             transition: border-color 0.2s;
+            background: var(--white);
+            font-family: 'Noto Sans SC', sans-serif;
         }
 
         .search-box input:focus {
             outline: none;
-            border-color: #667eea;
+            border-color: var(--terracotta);
+            box-shadow: 0 0 0 3px rgba(196,102,74,0.08);
         }
 
         .btn-add {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: var(--terracotta);
             color: white;
             border: none;
             padding: 10px 20px;
-            border-radius: 8px;
+            border-radius: var(--radius);
             font-size: 14px;
             font-weight: 500;
             cursor: pointer;
             transition: all 0.2s;
+            font-family: 'Noto Sans SC', sans-serif;
         }
 
         .btn-add:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+            background: var(--terracotta-hover);
+            transform: translateY(-1px);
+            box-shadow: var(--shadow-sm);
         }
 
         .btn-test-email {
-            background: linear-gradient(135deg, #38A169 0%, #2F855A 100%);
+            background: var(--sage);
             color: white;
             border: none;
             padding: 10px 20px;
-            border-radius: 8px;
+            border-radius: var(--radius);
             font-size: 14px;
             font-weight: 500;
             cursor: pointer;
             transition: all 0.2s;
+            font-family: 'Noto Sans SC', sans-serif;
         }
 
         .btn-test-email:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(56, 161, 105, 0.4);
+            background: #6A8B66;
+            transform: translateY(-1px);
+            box-shadow: var(--shadow-sm);
         }
 
         .users-table {
-            background: white;
-            border-radius: 12px;
-            box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+            background: var(--white);
+            border-radius: var(--radius-lg);
+            box-shadow: var(--shadow);
             overflow: hidden;
+            border: 1px solid rgba(212,200,188,0.4);
         }
 
         .table-header {
             padding: 20px 24px;
-            border-bottom: 1px solid #E2E8F0;
+            border-bottom: 1px solid var(--gray-200);
             display: flex;
             justify-content: space-between;
             align-items: center;
+            background: var(--gray-100);
         }
 
         .table-header h2 {
+            font-family: 'Noto Serif SC', serif;
             font-size: 18px;
-            color: #2D3748;
+            color: var(--gray-700);
         }
 
         .table-container {
@@ -185,39 +238,43 @@
         }
 
         th {
-            background: #F7FAFC;
+            background: var(--gray-100);
             padding: 12px 24px;
             text-align: left;
             font-size: 13px;
             font-weight: 600;
-            color: #4A5568;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
+            color: var(--gray-600);
+            letter-spacing: 0.3px;
+            border-bottom: 1px solid var(--gray-200);
         }
 
         td {
             padding: 16px 24px;
-            border-bottom: 1px solid #F0F2F5;
+            border-bottom: 1px solid var(--gray-100);
             font-size: 14px;
-            color: #2D3748;
+            color: var(--gray-700);
+        }
+
+        tr:nth-child(even) {
+            background: rgba(245,240,235,0.4);
         }
 
         tr:hover {
-            background: #FAFBFC;
+            background: var(--gray-100);
         }
 
         .admin-badge {
             display: inline-block;
-            background: #667eea;
+            background: var(--terracotta);
             color: white;
-            padding: 4px 8px;
-            border-radius: 4px;
+            padding: 4px 10px;
+            border-radius: 6px;
             font-size: 11px;
             font-weight: 600;
         }
 
         .btn-view {
-            background: #4299E1;
+            background: #5B8DB8;
             color: white;
             border: none;
             padding: 6px 12px;
@@ -226,14 +283,15 @@
             cursor: pointer;
             transition: all 0.2s;
             margin-right: 8px;
+            font-family: 'Noto Sans SC', sans-serif;
         }
 
         .btn-view:hover {
-            background: #3182CE;
+            background: #4A7CA7;
         }
 
         .btn-delete {
-            background: #F56565;
+            background: var(--danger);
             color: white;
             border: none;
             padding: 6px 12px;
@@ -241,14 +299,15 @@
             font-size: 12px;
             cursor: pointer;
             transition: all 0.2s;
+            font-family: 'Noto Sans SC', sans-serif;
         }
 
         .btn-delete:hover {
-            background: #E53E3E;
+            background: #B84430;
         }
 
         .btn-reset {
-            background: #ED8936;
+            background: var(--gray-400);
             color: white;
             border: none;
             padding: 6px 12px;
@@ -256,10 +315,12 @@
             font-size: 12px;
             cursor: pointer;
             transition: all 0.2s;
+            margin-right: 8px;
+            font-family: 'Noto Sans SC', sans-serif;
         }
 
         .btn-reset:hover {
-            background: #DD6B20;
+            background: var(--gray-500);
         }
 
         .pagination {
@@ -268,22 +329,24 @@
             align-items: center;
             gap: 8px;
             padding: 20px;
-            border-top: 1px solid #E2E8F0;
+            border-top: 1px solid var(--gray-200);
         }
 
         .pagination button {
-            background: white;
-            border: 1px solid #E2E8F0;
+            background: var(--white);
+            border: 1px solid var(--gray-200);
             padding: 8px 12px;
-            border-radius: 6px;
+            border-radius: 8px;
             cursor: pointer;
             transition: all 0.2s;
             font-size: 14px;
+            font-family: 'Noto Sans SC', sans-serif;
+            color: var(--gray-600);
         }
 
         .pagination button:hover:not(:disabled) {
-            background: #F7FAFC;
-            border-color: #CBD5E0;
+            background: var(--gray-100);
+            border-color: var(--gray-300);
         }
 
         .pagination button:disabled {
@@ -292,9 +355,9 @@
         }
 
         .pagination .active {
-            background: #667eea;
+            background: var(--terracotta);
             color: white;
-            border-color: #667eea;
+            border-color: var(--terracotta);
         }
 
         .modal {
@@ -304,7 +367,7 @@
             left: 0;
             width: 100%;
             height: 100%;
-            background: rgba(0, 0, 0, 0.5);
+            background: rgba(42,36,32,0.4);
             z-index: 1000;
             align-items: center;
             justify-content: center;
@@ -315,13 +378,15 @@
         }
 
         .modal-content {
-            background: white;
-            border-radius: 12px;
+            background: var(--white);
+            border-radius: var(--radius-lg);
             padding: 30px;
             width: 90%;
             max-width: 500px;
             max-height: 90vh;
             overflow-y: auto;
+            box-shadow: var(--shadow-lg);
+            border: 1px solid rgba(212,200,188,0.4);
         }
 
         .modal-header {
@@ -332,15 +397,16 @@
         }
 
         .modal-header h2 {
+            font-family: 'Noto Serif SC', serif;
             font-size: 20px;
-            color: #2D3748;
+            color: var(--gray-800);
         }
 
         .btn-close {
             background: none;
             border: none;
             font-size: 24px;
-            color: #A0AEC0;
+            color: var(--gray-400);
             cursor: pointer;
             padding: 0;
             width: 30px;
@@ -348,10 +414,11 @@
             display: flex;
             align-items: center;
             justify-content: center;
+            transition: color 0.2s;
         }
 
         .btn-close:hover {
-            color: #4A5568;
+            color: var(--gray-700);
         }
 
         .form-group {
@@ -361,7 +428,7 @@
         .form-group label {
             display: block;
             margin-bottom: 8px;
-            color: #4A5568;
+            color: var(--gray-700);
             font-weight: 500;
             font-size: 14px;
         }
@@ -369,15 +436,19 @@
         .form-group input {
             width: 100%;
             padding: 10px 12px;
-            border: 2px solid #E2E8F0;
-            border-radius: 6px;
+            border: 2px solid var(--gray-200);
+            border-radius: var(--radius);
             font-size: 14px;
-            transition: border-color 0.2s;
+            transition: all 0.2s;
+            background: var(--gray-100);
+            font-family: 'Noto Sans SC', sans-serif;
         }
 
         .form-group input:focus {
             outline: none;
-            border-color: #667eea;
+            border-color: var(--terracotta);
+            background: var(--white);
+            box-shadow: 0 0 0 3px rgba(196,102,74,0.08);
         }
 
         .form-group input[type="checkbox"] {
@@ -398,35 +469,38 @@
         }
 
         .btn-cancel {
-            background: #E2E8F0;
-            color: #4A5568;
+            background: var(--gray-200);
+            color: var(--gray-600);
             border: none;
             padding: 10px 20px;
-            border-radius: 6px;
+            border-radius: var(--radius);
             font-size: 14px;
             cursor: pointer;
             transition: all 0.2s;
+            font-family: 'Noto Sans SC', sans-serif;
         }
 
         .btn-cancel:hover {
-            background: #CBD5E0;
+            background: var(--gray-300);
         }
 
         .btn-submit {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: var(--terracotta);
             color: white;
             border: none;
             padding: 10px 20px;
-            border-radius: 6px;
+            border-radius: var(--radius);
             font-size: 14px;
             font-weight: 500;
             cursor: pointer;
             transition: all 0.2s;
+            font-family: 'Noto Sans SC', sans-serif;
         }
 
         .btn-submit:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+            background: var(--terracotta-hover);
+            transform: translateY(-1px);
+            box-shadow: var(--shadow-sm);
         }
 
         .user-detail {
@@ -434,8 +508,9 @@
         }
 
         .user-detail h3 {
+            font-family: 'Noto Serif SC', serif;
             font-size: 16px;
-            color: #2D3748;
+            color: var(--gray-800);
             margin-bottom: 16px;
         }
 
@@ -446,13 +521,13 @@
 
         .detail-label {
             width: 120px;
-            color: #718096;
+            color: var(--gray-500);
             font-size: 14px;
         }
 
         .detail-value {
             flex: 1;
-            color: #2D3748;
+            color: var(--gray-700);
             font-size: 14px;
         }
 
@@ -462,25 +537,10 @@
 
         .todo-item {
             padding: 12px;
-            border-bottom: 1px solid #F0F2F5;
+            border-bottom: 1px solid var(--gray-100);
             display: flex;
             align-items: center;
             gap: 12px;
-        }
-
-        @media (max-width: 480px) {
-            .todo-item {
-                padding: 10px;
-                gap: 8px;
-            }
-
-            .todo-title {
-                font-size: 13px;
-            }
-
-            .todo-date {
-                font-size: 11px;
-            }
         }
 
         .todo-item:last-child {
@@ -490,7 +550,7 @@
         .todo-checkbox {
             width: 18px;
             height: 18px;
-            border: 2px solid #CBD5E0;
+            border: 2px solid var(--gray-300);
             border-radius: 4px;
             cursor: pointer;
             display: flex;
@@ -500,12 +560,12 @@
         }
 
         .todo-checkbox.checked {
-            background: #48BB78;
-            border-color: #48BB78;
+            background: var(--sage);
+            border-color: var(--sage);
         }
 
         .todo-checkbox.checked::after {
-            content: '✓';
+            content: '\2713';
             color: white;
             font-size: 12px;
             font-weight: bold;
@@ -517,13 +577,13 @@
 
         .todo-title {
             font-size: 14px;
-            color: #2D3748;
+            color: var(--gray-700);
             font-weight: 500;
         }
 
         .todo-date {
             font-size: 12px;
-            color: #A0AEC0;
+            color: var(--gray-400);
             margin-top: 4px;
         }
 
@@ -532,14 +592,16 @@
             top: 20px;
             left: 50%;
             transform: translateX(-50%) translateY(-100px);
-            background: #2D3748;
+            background: var(--gray-800);
             color: white;
             padding: 12px 24px;
-            border-radius: 8px;
+            border-radius: var(--radius-lg);
             font-size: 14px;
             opacity: 0;
             transition: all 0.3s;
             z-index: 1001;
+            box-shadow: var(--shadow-lg);
+            font-family: 'Noto Sans SC', sans-serif;
         }
 
         .toast.show {
@@ -547,23 +609,22 @@
             opacity: 1;
         }
 
-        .toast.error {
-            background: #E53E3E;
-        }
-
-        .toast.success {
-            background: #38A169;
-        }
+        .toast.error { background: var(--danger); }
+        .toast.success { background: var(--sage); }
 
         .empty-state {
             padding: 48px 24px;
             text-align: center;
-            color: #A0AEC0;
+            color: var(--gray-400);
         }
 
         .empty-state-icon {
-            font-size: 48px;
             margin-bottom: 16px;
+        }
+
+        .empty-state-icon svg {
+            width: 48px;
+            height: 48px;
         }
 
         .empty-state p {
@@ -571,119 +632,37 @@
         }
 
         @media (max-width: 480px) {
-            .header {
-                padding: 15px 20px;
-            }
-
-            .header h1 {
-                font-size: 20px;
-            }
-
-            .container {
-                padding: 15px;
-            }
-
-            .toolbar {
-                flex-direction: column;
-                align-items: stretch;
-                gap: 12px;
-            }
-
-            .search-box {
-                max-width: none;
-            }
-
-            .btn-add {
-                width: 100%;
-            }
-
-            th, td {
-                padding: 10px 12px;
-                font-size: 12px;
-            }
-
-            .btn-view, .btn-delete {
-                padding: 5px 10px;
-                font-size: 11px;
-            }
-
-            .modal-content {
-                padding: 15px;
-                width: 95%;
-            }
+            .header { padding: 15px 20px; }
+            .header h1 { font-size: 20px; }
+            .container { padding: 15px; }
+            .toolbar { flex-direction: column; align-items: stretch; gap: 12px; }
+            .search-box { max-width: none; }
+            .btn-add { width: 100%; }
+            th, td { padding: 10px 12px; font-size: 12px; }
+            .btn-view, .btn-delete, .btn-reset { padding: 5px 10px; font-size: 11px; }
+            .modal-content { padding: 15px; width: 95%; }
         }
 
         @media (min-width: 481px) and (max-width: 768px) {
-            .header {
-                padding: 20px 25px;
-            }
-
-            .header h1 {
-                font-size: 22px;
-            }
-
-            .container {
-                padding: 20px;
-            }
-
-            .toolbar {
-                flex-direction: row;
-                align-items: center;
-            }
-
-            .search-box {
-                max-width: 300px;
-            }
-
-            .btn-add {
-                width: auto;
-            }
-
-            th, td {
-                padding: 12px 14px;
-                font-size: 13px;
-            }
-
-            .modal-content {
-                padding: 20px;
-            }
+            .header { padding: 20px 25px; }
+            .header h1 { font-size: 22px; }
+            .container { padding: 20px; }
+            .toolbar { flex-direction: row; align-items: center; }
+            .search-box { max-width: 300px; }
+            .btn-add { width: auto; }
+            th, td { padding: 12px 14px; font-size: 13px; }
+            .modal-content { padding: 20px; }
         }
 
         @media (min-width: 769px) {
-            .header {
-                padding: 30px;
-            }
-
-            .header h1 {
-                font-size: 28px;
-            }
-
-            .container {
-                padding: 30px;
-            }
-
-            .toolbar {
-                flex-direction: row;
-                align-items: center;
-            }
-
-            .search-box {
-                max-width: 400px;
-            }
-
-            .btn-add {
-                width: auto;
-            }
-
-            th, td {
-                padding: 14px 20px;
-                font-size: 14px;
-            }
-
-            .modal-content {
-                padding: 30px;
-                max-width: 600px;
-            }
+            .header { padding: 30px; }
+            .header h1 { font-size: 28px; }
+            .container { padding: 30px; }
+            .toolbar { flex-direction: row; align-items: center; }
+            .search-box { max-width: 400px; }
+            .btn-add { width: auto; }
+            th, td { padding: 14px 20px; font-size: 14px; }
+            .modal-content { padding: 30px; max-width: 600px; }
         }
     </style>
 </head>
@@ -733,7 +712,14 @@
                         <tr>
                             <td colspan="8">
                                 <div class="empty-state">
-                                    <div class="empty-state-icon">👥</div>
+                                    <div class="empty-state-icon">
+                                        <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                                            <circle cx="16" cy="14" r="5"/>
+                                            <path d="M6 34c0-5.5 4.5-10 10-10s10 4.5 10 10"/>
+                                            <circle cx="34" cy="18" r="4"/>
+                                            <path d="M28 34c0-3.3 2.7-6 6-6s6 2.7 6 6"/>
+                                        </svg>
+                                    </div>
                                     <p>加载中...</p>
                                 </div>
                             </td>
@@ -895,7 +881,14 @@
                     <tr>
                         <td colspan="8">
                             <div class="empty-state">
-                                <div class="empty-state-icon">👥</div>
+                                <div class="empty-state-icon">
+                                    <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                                        <circle cx="16" cy="14" r="5"/>
+                                        <path d="M6 34c0-5.5 4.5-10 10-10s10 4.5 10 10"/>
+                                        <circle cx="34" cy="18" r="4"/>
+                                        <path d="M28 34c0-3.3 2.7-6 6-6s6 2.7 6 6"/>
+                                    </svg>
+                                </div>
                                 <p>暂无用户</p>
                             </div>
                         </td>
@@ -1100,7 +1093,7 @@
                 </div>
                 <div class="todos-list">
                     <h3>待办事项 (${user.todos.length})</h3>
-                    ${user.todos.length === 0 ? '<p style="color: #A0AEC0; text-align: center; padding: 20px;">暂无待办事项</p>' : 
+                    ${user.todos.length === 0 ? '<p style="color: var(--gray-400); text-align: center; padding: 20px;">暂无待办事项</p>' : 
                         user.todos.map(todo => `
                             <div class="todo-item">
                                 <div class="todo-checkbox ${todo.completed ? 'checked' : ''}"></div>
