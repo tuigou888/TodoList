@@ -72,6 +72,7 @@ from todo_app.security import (
     legacy_hash_password,
     verify_password,
 )
+from todo_app.ics import build_ics
 from todo_app.nlp import parse_natural
 from todo_app.validators import (
     MAX_TODO_DESCRIPTION,
@@ -1103,6 +1104,95 @@ def send_review_now():
     if not ok:
         return jsonify({"error": "回顾邮件入队失败"}), 500
     return jsonify({"message": "回顾邮件已加入发送队列"})
+
+
+@app.route("/api/me/ics-token", methods=["GET"])
+@login_required
+def get_ics_token():
+    conn = get_db_connection()
+    user = conn.execute(
+        "SELECT ics_token FROM users WHERE id = ?", (session["user_id"],)
+    ).fetchone()
+    conn.close()
+
+    token = user["ics_token"] if user else None
+    return jsonify(
+        {
+            "enabled": bool(token),
+            "url": f"{BASE_URL}/calendar.ics?token={token}" if token else None,
+        }
+    )
+
+
+@app.route("/api/me/ics-token", methods=["POST"])
+@login_required
+def create_ics_token():
+    token = secrets.token_urlsafe(24)
+    conn = get_db_connection()
+    conn.execute(
+        "UPDATE users SET ics_token = ? WHERE id = ?",
+        (token, session["user_id"]),
+    )
+    log_audit(conn, session["user_id"], "create_ics_token", "user", session["user_id"])
+    conn.commit()
+    conn.close()
+
+    return jsonify(
+        {
+            "url": f"{BASE_URL}/calendar.ics?token={token}",
+            "message": "订阅链接已生成",
+        }
+    )
+
+
+@app.route("/api/me/ics-token", methods=["DELETE"])
+@login_required
+def revoke_ics_token():
+    conn = get_db_connection()
+    conn.execute(
+        "UPDATE users SET ics_token = NULL WHERE id = ?", (session["user_id"],)
+    )
+    log_audit(conn, session["user_id"], "revoke_ics_token", "user", session["user_id"])
+    conn.commit()
+    conn.close()
+
+    return jsonify({"message": "订阅链接已撤销"})
+
+
+@app.route("/calendar.ics")
+def calendar_feed():
+    """只读日历订阅：把有截止日期的未完成待办导出为 ICS"""
+    token = request.args.get("token", "").strip()
+    if not token:
+        return "无效的订阅链接", 403
+
+    conn = get_db_connection()
+    user = conn.execute(
+        "SELECT id FROM users WHERE ics_token = ? AND is_active = 1", (token,)
+    ).fetchone()
+    if not user:
+        conn.close()
+        return "无效的订阅链接", 403
+
+    todos = conn.execute(
+        """
+        SELECT * FROM todos
+        WHERE user_id = ? AND deleted_at IS NULL AND completed = 0 AND due_date IS NOT NULL
+        ORDER BY due_date ASC, due_time ASC, created_at ASC
+        """,
+        (user["id"],),
+    ).fetchall()
+    conn.close()
+
+    return Response(
+        build_ics(todos),
+        mimetype="text/calendar",
+        headers={
+            "Content-Disposition": 'inline; filename="todo.ics"',
+            "Cache-Control": "no-cache",
+            "Referrer-Policy": "no-referrer",
+        },
+    )
 
 
 @app.route("/settings")
