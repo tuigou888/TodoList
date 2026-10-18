@@ -204,6 +204,7 @@ def init_db():
             password TEXT NOT NULL,
             email TEXT,
             is_admin INTEGER DEFAULT 0,
+            is_active INTEGER DEFAULT 1,
             reminder_time INTEGER DEFAULT 540,
             reminder_enabled INTEGER DEFAULT 1,
             last_reminded_on DATE,
@@ -223,6 +224,10 @@ def init_db():
             completed INTEGER DEFAULT 0,
             created_date DATE,
             created_at TIMESTAMP,
+            due_date DATE,
+            priority INTEGER DEFAULT 2,
+            completed_at TIMESTAMP,
+            updated_at TIMESTAMP,
             user_id INTEGER NOT NULL,
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
         )
@@ -253,8 +258,23 @@ def init_db():
     """
     )
 
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS audit_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            actor_id INTEGER,
+            action TEXT NOT NULL,
+            target_type TEXT,
+            target_id INTEGER,
+            detail TEXT,
+            created_at TIMESTAMP NOT NULL
+        )
+    """
+    )
+
     # 老数据库补字段（幂等）
     ensure_column(conn, "users", "is_admin", "INTEGER DEFAULT 0")
+    ensure_column(conn, "users", "is_active", "INTEGER DEFAULT 1")
     ensure_column(conn, "users", "reminder_time", "INTEGER DEFAULT 540")
     ensure_column(conn, "users", "last_login_at", "TIMESTAMP")
     ensure_column(conn, "users", "reminder_enabled", "INTEGER DEFAULT 1")
@@ -263,6 +283,10 @@ def init_db():
     ensure_column(conn, "users", "session_version", "INTEGER DEFAULT 0")
     ensure_column(conn, "todos", "user_id", "INTEGER")
     ensure_column(conn, "todos", "created_date", "DATE")
+    ensure_column(conn, "todos", "due_date", "DATE")
+    ensure_column(conn, "todos", "priority", "INTEGER DEFAULT 2")
+    ensure_column(conn, "todos", "completed_at", "TIMESTAMP")
+    ensure_column(conn, "todos", "updated_at", "TIMESTAMP")
 
     # 常用查询索引：按用户、完成状态、日期检索
     conn.execute("CREATE INDEX IF NOT EXISTS idx_todos_user_id ON todos(user_id)")
@@ -281,6 +305,15 @@ def init_db():
     )
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_prr_user_time ON password_reset_requests(user_id, requested_at)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_todos_user_due ON todos(user_id, due_date)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_todos_user_priority ON todos(user_id, priority)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_logs(created_at)"
     )
 
     conn.commit()
@@ -357,11 +390,16 @@ def login_required(f):
         # 校验用户仍然存在且会话版本一致：被删除/被重置密码用户的旧会话立即失效
         conn = get_db_connection()
         user = conn.execute(
-            "SELECT id, session_version FROM users WHERE id = ?", (user_id,)
+            "SELECT id, session_version, is_active FROM users WHERE id = ?",
+            (user_id,),
         ).fetchone()
         conn.close()
 
-        if not user or user["session_version"] != session.get("session_version", 0):
+        if (
+            not user
+            or user["is_active"] == 0
+            or user["session_version"] != session.get("session_version", 0)
+        ):
             session.clear()
             return jsonify({"error": "登录状态已失效，请重新登录"}), 401
 
@@ -384,11 +422,16 @@ def admin_required(f):
 
         conn = get_db_connection()
         user = conn.execute(
-            "SELECT is_admin, session_version FROM users WHERE id = ?", (user_id,)
+            "SELECT is_admin, session_version, is_active FROM users WHERE id = ?",
+            (user_id,),
         ).fetchone()
         conn.close()
 
-        if not user or user["session_version"] != session.get("session_version", 0):
+        if (
+            not user
+            or user["is_active"] == 0
+            or user["session_version"] != session.get("session_version", 0)
+        ):
             session.clear()
             return jsonify({"error": "登录状态已失效，请重新登录"}), 401
 
@@ -747,6 +790,59 @@ def validate_text(value, field_name, max_length, required=False):
     if len(value) > max_length:
         return None, f"{field_name}不能超过{max_length}个字符"
     return value, None
+
+
+VALID_PRIORITIES = (1, 2, 3)
+PRIORITY_LABELS = {1: "低", 2: "普通", 3: "高"}
+
+
+def validate_date(value, field_name="日期"):
+    if value in (None, ""):
+        return None, None
+    if not isinstance(value, str):
+        return None, f"{field_name}格式必须为 YYYY-MM-DD"
+    value = value.strip()
+    try:
+        datetime.strptime(value, "%Y-%m-%d")
+    except ValueError:
+        return None, f"{field_name}格式必须为 YYYY-MM-DD"
+    return value, None
+
+
+def validate_priority(value):
+    if value is None or value == "":
+        return 2, None
+    try:
+        priority = int(value)
+    except (TypeError, ValueError):
+        return None, "优先级必须是 1-3 的整数"
+    if priority not in VALID_PRIORITIES:
+        return None, "优先级必须是 1-3 的整数"
+    return priority, None
+
+
+def serialize_todo(todo):
+    """统一的待办事项输出结构"""
+    return {
+        "id": todo["id"],
+        "title": todo["title"],
+        "description": todo["description"],
+        "completed": bool(todo["completed"]),
+        "priority": todo["priority"] if todo["priority"] is not None else 2,
+        "due_date": todo["due_date"],
+        "created_date": todo["created_date"],
+        "created_at": todo["created_at"],
+        "completed_at": todo["completed_at"],
+        "updated_at": todo["updated_at"],
+    }
+
+
+def log_audit(conn, actor_id, action, target_type=None, target_id=None, detail=None):
+    """记录关键操作，便于管理员追溯"""
+    conn.execute(
+        "INSERT INTO audit_logs (actor_id, action, target_type, target_id, detail, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+        (actor_id, action, target_type, target_id, detail, now_string()),
+    )
 
 
 def read_json_object():
@@ -1146,6 +1242,10 @@ def login():
         conn.close()
         return jsonify({"error": "用户名或密码错误"}), 401
 
+    if user["is_active"] == 0:
+        conn.close()
+        return jsonify({"error": "账户已被禁用，请联系管理员"}), 403
+
     matched, needs_rehash = verify_password(user["password"], password)
     if not matched:
         conn.close()
@@ -1277,6 +1377,112 @@ def update_reminder_time():
     )
 
 
+@app.route("/settings")
+def settings_page():
+    if "user_id" not in session:
+        return redirect("/login")
+    return render_template("settings.html")
+
+
+@app.route("/api/me/password", methods=["PUT"])
+@login_required
+def change_password():
+    data = read_json_object()
+    if data is None:
+        return jsonify({"error": "请求必须是 JSON 对象"}), 400
+
+    current_password = data.get("current_password")
+    if not isinstance(current_password, str) or not current_password:
+        return jsonify({"error": "请输入当前密码"}), 400
+
+    new_password, error = validate_password(data.get("new_password"))
+    if error:
+        return jsonify({"error": error}), 400
+
+    conn = get_db_connection()
+    try:
+        user = conn.execute(
+            "SELECT id, password FROM users WHERE id = ?", (session["user_id"],)
+        ).fetchone()
+        matched, _ = verify_password(user["password"], current_password)
+        if not matched:
+            return jsonify({"error": "当前密码不正确"}), 400
+
+        conn.execute(
+            "UPDATE users SET password = ?, session_version = session_version + 1 WHERE id = ?",
+            (hash_password(new_password), user["id"]),
+        )
+        log_audit(conn, user["id"], "change_password", "user", user["id"])
+        conn.commit()
+    finally:
+        conn.close()
+
+    session.clear()
+    return jsonify({"message": "密码已修改，请重新登录"})
+
+
+@app.route("/api/me/email", methods=["PUT"])
+@login_required
+def change_email():
+    data = read_json_object()
+    if data is None:
+        return jsonify({"error": "请求必须是 JSON 对象"}), 400
+
+    new_email, error = validate_email(data.get("email"))
+    if error:
+        return jsonify({"error": error}), 400
+
+    current_password = data.get("current_password")
+    if not isinstance(current_password, str) or not current_password:
+        return jsonify({"error": "请输入当前密码"}), 400
+
+    conn = get_db_connection()
+    try:
+        user = conn.execute(
+            "SELECT id, password, email FROM users WHERE id = ?",
+            (session["user_id"],),
+        ).fetchone()
+        matched, _ = verify_password(user["password"], current_password)
+        if not matched:
+            return jsonify({"error": "当前密码不正确"}), 400
+
+        if (user["email"] or "").lower() == new_email:
+            return jsonify({"message": "邮箱未变化", "email": new_email})
+
+        duplicate = conn.execute(
+            "SELECT id FROM users WHERE LOWER(email) = ? AND id != ?",
+            (new_email, user["id"]),
+        ).fetchone()
+        if duplicate:
+            return jsonify({"error": "该邮箱已被其他账户使用"}), 400
+
+        conn.execute(
+            "UPDATE users SET email = ? WHERE id = ?", (new_email, user["id"])
+        )
+        log_audit(conn, user["id"], "change_email", "user", user["id"])
+        conn.commit()
+    finally:
+        conn.close()
+
+    return jsonify({"message": "邮箱已更新", "email": new_email})
+
+
+@app.route("/api/me/logout-all", methods=["POST"])
+@login_required
+def logout_all_devices():
+    conn = get_db_connection()
+    conn.execute(
+        "UPDATE users SET session_version = session_version + 1 WHERE id = ?",
+        (session["user_id"],),
+    )
+    log_audit(conn, session["user_id"], "logout_all", "user", session["user_id"])
+    conn.commit()
+    conn.close()
+
+    session.clear()
+    return jsonify({"message": "已退出所有设备，请重新登录"})
+
+
 @app.route("/")
 def index():
     """
@@ -1297,51 +1503,98 @@ def index():
 def get_todos():
     """
     获取待办事项列表API
-    根据日期筛选返回用户的待办事项
+    支持日期、状态、优先级、关键字、排序与数量限制
     """
-    try:
-        date = request.args.get("date")
-        view = request.args.get("view", "today")  # today 或 all
-        user_id = session["user_id"]
-        conn = get_db_connection()
+    date, error = validate_date(request.args.get("date"), "日期")
+    if error:
+        return jsonify({"error": error}), 400
 
-        if date:
-            # 指定日期的查询
-            todos = conn.execute(
-                "SELECT * FROM todos WHERE created_date = ? AND user_id = ? ORDER BY created_at DESC",
-                (date, user_id),
-            ).fetchall()
-        elif view == "all":
-            # 所有待办（已完成 + 未完成）
-            todos = conn.execute(
-                "SELECT * FROM todos WHERE user_id = ? ORDER BY created_at DESC",
-                (user_id,),
-            ).fetchall()
-        else:
-            # 默认只返回未完成的
-            todos = conn.execute(
-                "SELECT * FROM todos WHERE user_id = ? AND completed = 0 ORDER BY created_at DESC",
-                (user_id,),
-            ).fetchall()
+    view = request.args.get("view", "today")
+    status = request.args.get("status", "")
+    keyword = (request.args.get("q") or "").strip()[:100]
+    priority = request.args.get("priority", type=int)
+    sort = request.args.get("sort", "created_desc")
+    limit = request.args.get("limit", 200, type=int) or 200
+    limit = min(max(limit, 1), 500)
 
-        conn.close()
+    where = ["user_id = ?"]
+    params = [session["user_id"]]
 
-        result = []
-        for todo in todos:
-            result.append(
-                {
-                    "id": todo["id"],
-                    "title": todo["title"],
-                    "description": todo["description"],
-                    "completed": bool(todo["completed"]),
-                    "created_date": todo["created_date"],
-                    "created_at": todo["created_at"],
-                }
-            )
+    if date:
+        where.append("created_date = ?")
+        params.append(date)
 
-        return jsonify(result)
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    if view == "all":
+        completed_filter = None
+    elif view == "completed":
+        completed_filter = 1
+    else:
+        completed_filter = 0
+
+    if status == "active":
+        completed_filter = 0
+    elif status == "completed":
+        completed_filter = 1
+    elif status == "all":
+        completed_filter = None
+
+    if completed_filter is not None:
+        where.append("completed = ?")
+        params.append(completed_filter)
+
+    if keyword:
+        where.append("(title LIKE ? OR description LIKE ?)")
+        params.extend([f"%{keyword}%", f"%{keyword}%"])
+
+    if priority in VALID_PRIORITIES:
+        where.append("priority = ?")
+        params.append(priority)
+
+    order_by = {
+        "created_desc": "created_at DESC",
+        "created_asc": "created_at ASC",
+        "due_asc": "CASE WHEN due_date IS NULL THEN 1 ELSE 0 END, due_date ASC, created_at DESC",
+        "priority_desc": "priority DESC, created_at DESC",
+    }.get(sort, "created_at DESC")
+
+    sql = f"SELECT * FROM todos WHERE {' AND '.join(where)} ORDER BY {order_by} LIMIT ?"
+    params.append(limit)
+
+    conn = get_db_connection()
+    todos = conn.execute(sql, params).fetchall()
+    conn.close()
+
+    return jsonify([serialize_todo(todo) for todo in todos])
+
+
+@app.route("/api/todos/stats", methods=["GET"])
+@login_required
+def get_todo_stats():
+    """当前用户的待办统计：未完成、已完成、今日新增、逾期"""
+    today = datetime.now().strftime("%Y-%m-%d")
+    conn = get_db_connection()
+    row = conn.execute(
+        """
+        SELECT COUNT(*) AS total,
+               SUM(CASE WHEN completed = 0 THEN 1 ELSE 0 END) AS pending,
+               SUM(CASE WHEN completed = 1 THEN 1 ELSE 0 END) AS completed,
+               SUM(CASE WHEN completed = 0 AND due_date IS NOT NULL AND due_date < ? THEN 1 ELSE 0 END) AS overdue,
+               SUM(CASE WHEN created_date = ? THEN 1 ELSE 0 END) AS created_today
+        FROM todos WHERE user_id = ?
+        """,
+        (today, today, session["user_id"]),
+    ).fetchone()
+    conn.close()
+
+    return jsonify(
+        {
+            "total": row["total"] or 0,
+            "pending": row["pending"] or 0,
+            "completed": row["completed"] or 0,
+            "overdue": row["overdue"] or 0,
+            "created_today": row["created_today"] or 0,
+        }
+    )
 
 
 @app.route("/api/todos", methods=["POST"])
@@ -1367,34 +1620,44 @@ def add_todo():
     if error:
         return jsonify({"error": error}), 400
 
+    due_date, error = validate_date(data.get("due_date"), "截止日期")
+    if error:
+        return jsonify({"error": error}), 400
+
+    priority, error = validate_priority(data.get("priority"))
+    if error:
+        return jsonify({"error": error}), 400
+
     user_id = session["user_id"]
 
     now = datetime.now()
     created_date = now.strftime("%Y-%m-%d")
-    created_at = now.strftime("%Y-%m-%d %H:%M:%S")
+    created_at = now_string(now)
 
     conn = get_db_connection()
     cursor = conn.execute(
-        "INSERT INTO todos (title, description, user_id, created_date, created_at) VALUES (?, ?, ?, ?, ?)",
-        (title, description, user_id, created_date, created_at),
+        """
+        INSERT INTO todos
+            (title, description, user_id, created_date, created_at, due_date, priority, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            title,
+            description,
+            user_id,
+            created_date,
+            created_at,
+            due_date,
+            priority,
+            created_at,
+        ),
     )
     conn.commit()
     todo_id = cursor.lastrowid
+    todo = conn.execute("SELECT * FROM todos WHERE id = ?", (todo_id,)).fetchone()
     conn.close()
 
-    return (
-        jsonify(
-            {
-                "id": todo_id,
-                "title": title,
-                "description": description,
-                "completed": False,
-                "created_date": created_date,
-                "created_at": created_at,
-            }
-        ),
-        201,
-    )
+    return jsonify(serialize_todo(todo)), 201
 
 
 @app.route("/api/todos/<int:todo_id>", methods=["PUT"])
@@ -1426,6 +1689,21 @@ def update_todo(todo_id):
             conn.close()
             return jsonify({"error": "completed 必须是布尔值"}), 400
         updates["completed"] = 1 if data["completed"] else 0
+        updates["completed_at"] = now_string() if data["completed"] else None
+
+    if "due_date" in data:
+        due_date, error = validate_date(data["due_date"], "截止日期")
+        if error:
+            conn.close()
+            return jsonify({"error": error}), 400
+        updates["due_date"] = due_date
+
+    if "priority" in data:
+        priority, error = validate_priority(data["priority"])
+        if error:
+            conn.close()
+            return jsonify({"error": error}), 400
+        updates["priority"] = priority
 
     if "title" in data:
         title, error = validate_text(
@@ -1446,6 +1724,7 @@ def update_todo(todo_id):
         updates["description"] = description
 
     if updates:
+        updates["updated_at"] = now_string()
         assignments = ", ".join(f"{field} = ?" for field in updates)
         conn.execute(
             f"UPDATE todos SET {assignments} WHERE id = ?",
@@ -1458,16 +1737,7 @@ def update_todo(todo_id):
     ).fetchone()
     conn.close()
 
-    return jsonify(
-        {
-            "id": updated_todo["id"],
-            "title": updated_todo["title"],
-            "description": updated_todo["description"],
-            "completed": bool(updated_todo["completed"]),
-            "created_date": updated_todo["created_date"],
-            "created_at": updated_todo["created_at"],
-        }
-    )
+    return jsonify(serialize_todo(updated_todo))
 
 
 @app.route("/api/todos/<int:todo_id>", methods=["DELETE"])
@@ -1504,6 +1774,91 @@ def admin_page():
         return redirect("/")
 
     return render_template("admin.html")
+
+
+@app.route("/api/admin/stats", methods=["GET"])
+@admin_required
+def admin_stats():
+    """管理后台概览数据"""
+    now = datetime.now()
+    today = now.strftime("%Y-%m-%d")
+    week_ago = (now - timedelta(days=7)).strftime("%Y-%m-%d %H:%M:%S")
+
+    conn = get_db_connection()
+    users_total = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+    admins = conn.execute("SELECT COUNT(*) FROM users WHERE is_admin = 1").fetchone()[0]
+    disabled = conn.execute("SELECT COUNT(*) FROM users WHERE is_active = 0").fetchone()[0]
+    active_users = conn.execute(
+        "SELECT COUNT(*) FROM users WHERE last_login_at >= ?", (week_ago,)
+    ).fetchone()[0]
+    todos_total = conn.execute("SELECT COUNT(*) FROM todos").fetchone()[0]
+    todos_pending = conn.execute(
+        "SELECT COUNT(*) FROM todos WHERE completed = 0"
+    ).fetchone()[0]
+    todos_today = conn.execute(
+        "SELECT COUNT(*) FROM todos WHERE created_date = ?", (today,)
+    ).fetchone()[0]
+    todos_overdue = conn.execute(
+        "SELECT COUNT(*) FROM todos WHERE completed = 0 AND due_date IS NOT NULL AND due_date < ?",
+        (today,),
+    ).fetchone()[0]
+    conn.close()
+
+    completion_rate = (
+        round((todos_total - todos_pending) * 100 / todos_total, 1)
+        if todos_total
+        else 0.0
+    )
+
+    return jsonify(
+        {
+            "users_total": users_total,
+            "admins": admins,
+            "disabled": disabled,
+            "active_users": active_users,
+            "todos_total": todos_total,
+            "todos_pending": todos_pending,
+            "todos_today": todos_today,
+            "todos_overdue": todos_overdue,
+            "completion_rate": completion_rate,
+        }
+    )
+
+
+@app.route("/api/admin/audit-logs", methods=["GET"])
+@admin_required
+def get_audit_logs():
+    limit = request.args.get("limit", 20, type=int) or 20
+    limit = min(max(limit, 1), 100)
+
+    conn = get_db_connection()
+    rows = conn.execute(
+        """
+        SELECT a.id, a.action, a.target_type, a.target_id, a.detail, a.created_at,
+               u.username AS actor_name
+        FROM audit_logs a
+        LEFT JOIN users u ON u.id = a.actor_id
+        ORDER BY a.id DESC
+        LIMIT ?
+        """,
+        (limit,),
+    ).fetchall()
+    conn.close()
+
+    return jsonify(
+        [
+            {
+                "id": row["id"],
+                "action": row["action"],
+                "actor_name": row["actor_name"] or "系统",
+                "target_type": row["target_type"],
+                "target_id": row["target_id"],
+                "detail": row["detail"],
+                "created_at": row["created_at"],
+            }
+            for row in rows
+        ]
+    )
 
 
 @app.route("/api/admin/users", methods=["GET"])
@@ -1551,6 +1906,7 @@ def get_users():
                 "username": user["username"],
                 "email": user["email"],
                 "is_admin": bool(user["is_admin"]),
+                "is_active": bool(user["is_active"]),
                 "created_at": user["created_at"],
                 "last_login_at": user["last_login_at"],
                 "todo_count": user["todo_count"],
@@ -1584,18 +1940,7 @@ def get_user_detail(user_id):
     ).fetchall()
     conn.close()
 
-    todo_list = []
-    for todo in todos:
-        todo_list.append(
-            {
-                "id": todo["id"],
-                "title": todo["title"],
-                "description": todo["description"],
-                "completed": bool(todo["completed"]),
-                "created_date": todo["created_date"],
-                "created_at": todo["created_at"],
-            }
-        )
+    todo_list = [serialize_todo(todo) for todo in todos]
 
     return jsonify(
         {
@@ -1654,8 +1999,9 @@ def create_user():
             "INSERT INTO users (username, password, email, is_admin) VALUES (?, ?, ?, ?)",
             (username, hashed_password, email, 1 if is_admin else 0),
         )
-        conn.commit()
         user_id = cursor.lastrowid
+        log_audit(conn, session["user_id"], "create_user", "user", user_id)
+        conn.commit()
         conn.close()
 
         return (
@@ -1704,6 +2050,7 @@ def reset_user_password(user_id):
             "UPDATE users SET password = ?, session_version = session_version + 1 WHERE id = ?",
             (hashed_password, user_id),
         )
+        log_audit(conn, session["user_id"], "reset_password", "user", user_id)
         conn.commit()
         conn.close()
 
@@ -1712,6 +2059,86 @@ def reset_user_password(user_id):
         conn.close()
         logger.exception("重置用户密码失败")
         return jsonify({"error": "重置密码失败"}), 500
+
+
+@app.route("/api/admin/users/<int:user_id>", methods=["PUT"])
+@admin_required
+def update_user(user_id):
+    data = read_json_object()
+    if data is None:
+        return jsonify({"error": "请求必须是 JSON 对象"}), 400
+
+    conn = get_db_connection()
+    try:
+        user = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+        if not user:
+            return jsonify({"error": "用户不存在"}), 404
+
+        updates = {}
+
+        if "username" in data:
+            username, error = validate_username(data.get("username"))
+            if error:
+                return jsonify({"error": error}), 400
+            duplicate = conn.execute(
+                "SELECT id FROM users WHERE LOWER(username) = LOWER(?) AND id != ?",
+                (username, user_id),
+            ).fetchone()
+            if duplicate:
+                return jsonify({"error": "用户名已存在"}), 400
+            updates["username"] = username
+
+        if "email" in data:
+            email, error = validate_email(data.get("email"))
+            if error:
+                return jsonify({"error": error}), 400
+            duplicate = conn.execute(
+                "SELECT id FROM users WHERE LOWER(email) = ? AND id != ?",
+                (email, user_id),
+            ).fetchone()
+            if duplicate:
+                return jsonify({"error": "邮箱已被注册"}), 400
+            updates["email"] = email
+
+        if "is_admin" in data:
+            is_admin = data["is_admin"]
+            if not isinstance(is_admin, bool):
+                return jsonify({"error": "is_admin 必须是布尔值"}), 400
+            if user_id == session["user_id"] and not is_admin:
+                return jsonify({"error": "不能取消自己的管理员权限"}), 400
+            updates["is_admin"] = 1 if is_admin else 0
+
+        if "is_active" in data:
+            is_active = data["is_active"]
+            if not isinstance(is_active, bool):
+                return jsonify({"error": "is_active 必须是布尔值"}), 400
+            if user_id == session["user_id"] and not is_active:
+                return jsonify({"error": "不能禁用自己的账户"}), 400
+            updates["is_active"] = 1 if is_active else 0
+            if not is_active:
+                updates["session_version"] = (user["session_version"] or 0) + 1
+
+        if not updates:
+            return jsonify({"error": "没有可更新的字段"}), 400
+
+        assignments = ", ".join(f"{field} = ?" for field in updates)
+        conn.execute(
+            f"UPDATE users SET {assignments} WHERE id = ?",
+            (*updates.values(), user_id),
+        )
+        log_audit(
+            conn,
+            session["user_id"],
+            "update_user",
+            "user",
+            user_id,
+            detail="更新字段: " + ", ".join(sorted(updates)),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    return jsonify({"message": "用户信息已更新"})
 
 
 @app.route("/api/admin/users/<int:user_id>", methods=["DELETE"])
@@ -1731,6 +2158,7 @@ def delete_user(user_id):
         conn.execute("DELETE FROM password_reset_requests WHERE user_id = ?", (user_id,))
         conn.execute("DELETE FROM todos WHERE user_id = ?", (user_id,))
         conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
+        log_audit(conn, session["user_id"], "delete_user", "user", user_id)
         conn.commit()
     finally:
         conn.close()
@@ -1754,20 +2182,7 @@ def get_user_todos(user_id):
     ).fetchall()
     conn.close()
 
-    result = []
-    for todo in todos:
-        result.append(
-            {
-                "id": todo["id"],
-                "title": todo["title"],
-                "description": todo["description"],
-                "completed": bool(todo["completed"]),
-                "created_date": todo["created_date"],
-                "created_at": todo["created_at"],
-            }
-        )
-
-    return jsonify(result)
+    return jsonify([serialize_todo(todo) for todo in todos])
 
 
 @app.route("/api/admin/test-email", methods=["POST"])

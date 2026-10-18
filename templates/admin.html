@@ -665,6 +665,91 @@
             th, td { padding: 14px 20px; font-size: 14px; }
             .modal-content { padding: 30px; max-width: 600px; }
         }
+        .stat-cards {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+        .stat-card {
+            background: var(--white);
+            border: 1px solid rgba(212,200,188,0.4);
+            border-radius: var(--radius-lg);
+            padding: 15px 18px;
+            box-shadow: var(--shadow-sm);
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+        .stat-value {
+            font-family: 'Noto Serif SC', serif;
+            font-size: 23px;
+            font-weight: 700;
+            color: var(--terracotta);
+        }
+        .stat-label { font-size: 12px; color: var(--gray-500); }
+
+        .status-badge {
+            display: inline-block;
+            padding: 3px 9px;
+            border-radius: 999px;
+            font-size: 11px;
+            font-weight: 600;
+        }
+        .status-active { background: #E8F0E6; color: #5B7A57; }
+        .status-disabled { background: #FDE8E0; color: #B84430; }
+
+        .btn-edit-user {
+            background: #E8EEF5;
+            color: #4A6E91;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 12px;
+            cursor: pointer;
+            transition: all 0.2s;
+            margin-right: 8px;
+            font-family: 'Noto Sans SC', sans-serif;
+        }
+        .btn-edit-user:hover { background: #D6E2EE; }
+
+        .btn-toggle {
+            background: var(--gray-400);
+            color: white;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 12px;
+            cursor: pointer;
+            transition: all 0.2s;
+            margin-right: 8px;
+            font-family: 'Noto Sans SC', sans-serif;
+        }
+        .btn-toggle:hover { background: var(--gray-500); }
+
+        .audit-card {
+            background: var(--white);
+            border-radius: var(--radius-lg);
+            box-shadow: var(--shadow);
+            margin-top: 20px;
+            border: 1px solid rgba(212,200,188,0.4);
+            overflow: hidden;
+        }
+        .audit-list { padding: 6px 24px 16px; }
+        .audit-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+            padding: 11px 0;
+            border-bottom: 1px solid var(--gray-100);
+            font-size: 13px;
+            color: var(--gray-600);
+        }
+        .audit-item:last-child { border-bottom: none; }
+        .audit-time { color: var(--gray-400); font-size: 12px; white-space: nowrap; }
+        .audit-empty { padding: 24px 0; text-align: center; color: var(--gray-400); font-size: 13px; }
+
     </style>
 </head>
 <body>
@@ -683,6 +768,33 @@
     </div>
 
     <div class="container">
+        <div class="stat-cards">
+            <div class="stat-card">
+                <span class="stat-value" id="statUsers">-</span>
+                <span class="stat-label">用户总数</span>
+            </div>
+            <div class="stat-card">
+                <span class="stat-value" id="statActive">-</span>
+                <span class="stat-label">7 天活跃</span>
+            </div>
+            <div class="stat-card">
+                <span class="stat-value" id="statTodos">-</span>
+                <span class="stat-label">待办总数</span>
+            </div>
+            <div class="stat-card">
+                <span class="stat-value" id="statPending">-</span>
+                <span class="stat-label">未完成</span>
+            </div>
+            <div class="stat-card">
+                <span class="stat-value" id="statOverdue">-</span>
+                <span class="stat-label">已逾期</span>
+            </div>
+            <div class="stat-card">
+                <span class="stat-value" id="statRate">-</span>
+                <span class="stat-label">完成率</span>
+            </div>
+        </div>
+
         <div class="toolbar">
             <div class="search-box">
                 <input type="text" id="searchInput" placeholder="搜索用户名或邮箱..." oninput="handleSearch()">
@@ -703,6 +815,7 @@
                             <th>用户名</th>
                             <th>邮箱</th>
                             <th>角色</th>
+                            <th>状态</th>
                             <th>待办数量</th>
                             <th>注册时间</th>
                             <th>最后登录</th>
@@ -711,7 +824,7 @@
                     </thead>
                     <tbody id="usersTableBody">
                         <tr>
-                            <td colspan="8">
+                            <td colspan="9">
                                 <div class="empty-state">
                                     <div class="empty-state-icon">
                                         <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
@@ -730,6 +843,15 @@
             </div>
             <div class="pagination" id="pagination"></div>
         </div>
+        <div class="audit-card">
+            <div class="table-header">
+                <h2>最近操作</h2>
+            </div>
+            <div class="audit-list" id="auditLogs">
+                <p class="audit-empty">加载中...</p>
+            </div>
+        </div>
+
     </div>
 
     <div class="modal" id="addModal">
@@ -794,18 +916,67 @@
         </div>
     </div>
 
+    <div class="modal" id="editUserModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>编辑用户</h2>
+                <button class="btn-close" onclick="closeEditUserModal()">&times;</button>
+            </div>
+            <form id="editUserForm" onsubmit="saveEditUser(event)">
+                <input type="hidden" id="editUserId">
+                <div class="form-group">
+                    <label for="editUsername">用户名</label>
+                    <input type="text" id="editUsername" required maxlength="32">
+                </div>
+                <div class="form-group">
+                    <label for="editUserEmail">邮箱</label>
+                    <input type="email" id="editUserEmail" required>
+                </div>
+                <div class="form-group">
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="editIsAdmin">
+                        <label for="editIsAdmin">管理员</label>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="editIsActive">
+                        <label for="editIsActive">启用账户</label>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn-cancel" onclick="closeEditUserModal()">取消</button>
+                    <button type="submit" class="btn-submit" id="editUserSaveBtn">保存</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <div class="toast" id="toast"></div>
 
     <script>
         let currentPage = 1;
         let totalPages = 1;
         let searchQuery = '';
+        let currentUsers = [];
+
+        const ACTION_LABELS = {
+            create_user: '创建用户',
+            update_user: '更新用户',
+            delete_user: '删除用户',
+            reset_password: '重置密码',
+            change_password: '修改密码',
+            change_email: '修改邮箱',
+            logout_all: '退出所有设备'
+        };
 
         async function init() {
             await checkAuth();
             updateDateTime();
             setInterval(updateDateTime, 1000);
+            loadStats();
             loadUsers();
+            loadAuditLogs();
         }
 
         function updateDateTime() {
@@ -840,12 +1011,8 @@
             if (!confirm('确定要退出登录吗？')) {
                 return;
             }
-            
             try {
-                const response = await fetch('/api/logout', {
-                    method: 'POST'
-                });
-                
+                const response = await fetch('/api/logout', { method: 'POST' });
                 if (response.ok) {
                     showToast('已退出登录', 'success');
                     setTimeout(() => {
@@ -857,12 +1024,31 @@
             }
         }
 
+        async function loadStats() {
+            try {
+                const response = await fetch('/api/admin/stats');
+                if (!response.ok) {
+                    return;
+                }
+                const stats = await response.json();
+                document.getElementById('statUsers').textContent = stats.users_total;
+                document.getElementById('statActive').textContent = stats.active_users;
+                document.getElementById('statTodos').textContent = stats.todos_total;
+                document.getElementById('statPending').textContent = stats.todos_pending;
+                document.getElementById('statOverdue').textContent = stats.todos_overdue;
+                document.getElementById('statRate').textContent = stats.completion_rate + '%';
+            } catch (error) {
+                // 统计失败不影响主流程
+            }
+        }
+
         async function loadUsers() {
             try {
                 const response = await fetch(`/api/admin/users?page=${currentPage}&search=${encodeURIComponent(searchQuery)}`);
                 const data = await response.json();
-                
+
                 if (response.ok) {
+                    currentUsers = data.users;
                     renderUsers(data.users);
                     renderPagination(data.total_pages, data.page);
                     totalPages = data.total_pages;
@@ -876,11 +1062,11 @@
 
         function renderUsers(users) {
             const tbody = document.getElementById('usersTableBody');
-            
+
             if (users.length === 0) {
                 tbody.innerHTML = `
                     <tr>
-                        <td colspan="8">
+                        <td colspan="9">
                             <div class="empty-state">
                                 <div class="empty-state-icon">
                                     <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
@@ -904,12 +1090,15 @@
                     <td>${escapeHtml(user.username)}</td>
                     <td>${escapeHtml(user.email || '-')}</td>
                     <td>${user.is_admin ? '<span class="admin-badge">管理员</span>' : '用户'}</td>
+                    <td><span class="status-badge ${user.is_active ? 'status-active' : 'status-disabled'}">${user.is_active ? '正常' : '已禁用'}</span></td>
                     <td>${user.todo_count}</td>
                     <td>${formatDateTime(user.created_at)}</td>
                     <td>${user.last_login_at ? formatDateTime(user.last_login_at) : '从未登录'}</td>
                     <td>
                         <button class="btn-view" onclick="viewUser(${user.id})">查看</button>
+                        <button class="btn-edit-user" onclick="openEditUserModal(${user.id})">编辑</button>
                         <button class="btn-reset" onclick="resetPassword(${user.id})">重置密码</button>
+                        <button class="btn-toggle" onclick="toggleActive(${user.id}, ${user.is_active})">${user.is_active ? '禁用' : '启用'}</button>
                         <button class="btn-delete" onclick="deleteUser(${user.id})">删除</button>
                     </td>
                 </tr>
@@ -918,7 +1107,7 @@
 
         function renderPagination(totalPages, currentPage) {
             const pagination = document.getElementById('pagination');
-            
+
             if (totalPages <= 1) {
                 pagination.innerHTML = '';
                 return;
@@ -927,13 +1116,13 @@
             let html = `
                 <button onclick="changePage(${currentPage - 1})" ${currentPage === 1 ? 'disabled' : ''}>上一页</button>
             `;
-            
+
             for (let i = 1; i <= totalPages; i++) {
                 html += `<button onclick="changePage(${i})" ${i === currentPage ? 'class="active"' : ''}>${i}</button>`;
             }
-            
+
             html += `<button onclick="changePage(${currentPage + 1})" ${currentPage === totalPages ? 'disabled' : ''}>下一页</button>`;
-            
+
             pagination.innerHTML = html;
         }
 
@@ -954,6 +1143,31 @@
             }, 300);
         }
 
+        async function loadAuditLogs() {
+            try {
+                const response = await fetch('/api/admin/audit-logs?limit=10');
+                if (!response.ok) {
+                    return;
+                }
+                const logs = await response.json();
+                const container = document.getElementById('auditLogs');
+
+                if (!logs.length) {
+                    container.innerHTML = '<p class="audit-empty">暂无操作记录</p>';
+                    return;
+                }
+
+                container.innerHTML = logs.map(log => `
+                    <div class="audit-item">
+                        <span>${escapeHtml(log.actor_name)} ${ACTION_LABELS[log.action] || log.action}${log.target_id ? ' #' + log.target_id : ''}</span>
+                        <span class="audit-time">${formatDateTime(log.created_at)}</span>
+                    </div>
+                `).join('');
+            } catch (error) {
+                // 日志加载失败不影响主流程
+            }
+        }
+
         function openAddModal() {
             document.getElementById('addModal').classList.add('show');
         }
@@ -965,7 +1179,7 @@
 
         async function handleAddUser(event) {
             event.preventDefault();
-            
+
             const formData = new FormData(event.target);
             const data = {
                 username: formData.get('username').trim(),
@@ -1002,11 +1216,94 @@
                     showToast('添加成功', 'success');
                     closeAddModal();
                     loadUsers();
+                    loadStats();
+                    loadAuditLogs();
                 } else {
                     showToast(result.error || '添加失败', 'error');
                 }
             } catch (error) {
                 showToast('添加失败，请稍后重试', 'error');
+            }
+        }
+
+        function openEditUserModal(userId) {
+            const user = currentUsers.find(item => item.id === userId);
+            if (!user) {
+                return;
+            }
+
+            document.getElementById('editUserId').value = user.id;
+            document.getElementById('editUsername').value = user.username;
+            document.getElementById('editUserEmail').value = user.email || '';
+            document.getElementById('editIsAdmin').checked = !!user.is_admin;
+            document.getElementById('editIsActive').checked = !!user.is_active;
+            document.getElementById('editUserModal').classList.add('show');
+        }
+
+        function closeEditUserModal() {
+            document.getElementById('editUserModal').classList.remove('show');
+        }
+
+        async function saveEditUser(event) {
+            event.preventDefault();
+            const userId = document.getElementById('editUserId').value;
+            const payload = {
+                username: document.getElementById('editUsername').value.trim(),
+                email: document.getElementById('editUserEmail').value.trim(),
+                is_admin: document.getElementById('editIsAdmin').checked,
+                is_active: document.getElementById('editIsActive').checked
+            };
+
+            const button = document.getElementById('editUserSaveBtn');
+            button.disabled = true;
+            try {
+                const response = await fetch(`/api/admin/users/${userId}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const result = await response.json();
+
+                if (response.ok) {
+                    showToast(result.message || '已保存', 'success');
+                    closeEditUserModal();
+                    loadUsers();
+                    loadStats();
+                    loadAuditLogs();
+                } else {
+                    showToast(result.error || '保存失败', 'error');
+                }
+            } catch (error) {
+                showToast('保存失败，请稍后重试', 'error');
+            } finally {
+                button.disabled = false;
+            }
+        }
+
+        async function toggleActive(userId, isActive) {
+            const action = isActive ? '禁用' : '启用';
+            if (!confirm(`确定要${action}这个用户吗？`)) {
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/admin/users/${userId}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ is_active: !isActive })
+                });
+                const result = await response.json();
+
+                if (response.ok) {
+                    showToast(`已${action}`, 'success');
+                    loadUsers();
+                    loadStats();
+                    loadAuditLogs();
+                } else {
+                    showToast(result.error || `${action}失败`, 'error');
+                }
+            } catch (error) {
+                showToast(`${action}失败，请稍后重试`, 'error');
             }
         }
 
@@ -1021,9 +1318,9 @@
 
         async function handleTestEmail(event) {
             event.preventDefault();
-            
+
             const email = document.getElementById('testEmail').value.trim();
-            
+
             if (!email || !email.includes('@')) {
                 showToast('请输入有效的邮箱地址', 'error');
                 return;
@@ -1032,7 +1329,7 @@
             const submitBtn = event.target.querySelector('.btn-submit');
             submitBtn.disabled = true;
             submitBtn.textContent = '发送中...';
-            
+
             try {
                 const response = await fetch('/api/admin/test-email', {
                     method: 'POST',
@@ -1089,6 +1386,10 @@
                         <span class="detail-value">${user.is_admin ? '管理员' : '用户'}</span>
                     </div>
                     <div class="detail-item">
+                        <span class="detail-label">状态:</span>
+                        <span class="detail-value">${user.is_active ? '正常' : '已禁用'}</span>
+                    </div>
+                    <div class="detail-item">
                         <span class="detail-label">注册时间:</span>
                         <span class="detail-value">${formatDateTime(user.created_at)}</span>
                     </div>
@@ -1099,13 +1400,13 @@
                 </div>
                 <div class="todos-list">
                     <h3>待办事项 (${user.todos.length})</h3>
-                    ${user.todos.length === 0 ? '<p style="color: var(--gray-400); text-align: center; padding: 20px;">暂无待办事项</p>' : 
+                    ${user.todos.length === 0 ? '<p style="color: var(--gray-400); text-align: center; padding: 20px;">暂无待办事项</p>' :
                         user.todos.map(todo => `
                             <div class="todo-item">
                                 <div class="todo-checkbox ${todo.completed ? 'checked' : ''}"></div>
                                 <div class="todo-content">
                                     <div class="todo-title">${escapeHtml(todo.title)}</div>
-                                    <div class="todo-date">${formatDateTime(todo.created_at)}</div>
+                                    <div class="todo-date">${todo.due_date ? '截止 ' + escapeHtml(todo.due_date) + ' · ' : ''}${formatDateTime(todo.created_at)}</div>
                                 </div>
                             </div>
                         `).join('')
@@ -1125,15 +1426,14 @@
             }
 
             try {
-                const response = await fetch(`/api/admin/users/${userId}`, {
-                    method: 'DELETE'
-                });
-
+                const response = await fetch(`/api/admin/users/${userId}`, { method: 'DELETE' });
                 const result = await response.json();
 
                 if (response.ok) {
                     showToast('删除成功', 'success');
                     loadUsers();
+                    loadStats();
+                    loadAuditLogs();
                 } else {
                     showToast(result.error || '删除失败', 'error');
                 }
@@ -1160,6 +1460,7 @@
 
                 if (response.ok) {
                     showToast(result.message || '密码重置成功', 'success');
+                    loadAuditLogs();
                 } else {
                     showToast(result.error || '重置失败', 'error');
                 }
@@ -1173,7 +1474,7 @@
             toast.textContent = message;
             toast.className = 'toast ' + type;
             toast.classList.add('show');
-            
+
             setTimeout(() => {
                 toast.classList.remove('show');
             }, 3000);

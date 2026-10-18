@@ -644,6 +644,129 @@
             .header { padding: 32px; }
             .header h1 { font-size: 28px; }
         }
+        .btn-settings {
+            background: transparent;
+            color: var(--terracotta);
+            border: 1px solid rgba(196,102,74,0.35);
+            padding: 8px 14px;
+            border-radius: var(--radius);
+            font-size: 13px;
+            font-weight: 500;
+            text-decoration: none;
+            transition: all 0.2s ease;
+        }
+        .btn-settings:hover { background: rgba(196,102,74,0.08); }
+
+        .meta-inputs { display: flex; gap: 12px; flex-wrap: wrap; }
+        .meta-field {
+            display: flex; flex-direction: column; gap: 6px;
+            flex: 1; min-width: 150px; font-size: 12px; color: var(--gray-500);
+        }
+        .meta-field input, .meta-field select {
+            width: 100%; padding: 12px 14px;
+            border: 2px solid var(--gray-200); border-radius: var(--radius-md);
+            font-size: 14px; background: var(--gray-100); color: var(--gray-700);
+            font-family: 'Noto Sans SC', sans-serif; transition: all 0.2s;
+        }
+        .meta-field input:focus, .meta-field select:focus {
+            outline: none; border-color: var(--terracotta); background: var(--white);
+            box-shadow: 0 0 0 3px rgba(196,102,74,0.08);
+        }
+
+        .filters {
+            display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+            padding: 14px 28px; border-bottom: 1px solid var(--gray-100); background: var(--white);
+        }
+        .filters select, .filters input {
+            padding: 9px 12px; border: 2px solid var(--gray-200); border-radius: 10px;
+            font-size: 13px; background: var(--gray-100); color: var(--gray-600);
+            font-family: 'Noto Sans SC', sans-serif; transition: all 0.2s;
+        }
+        .filters select:focus, .filters input:focus {
+            outline: none; border-color: var(--terracotta); background: var(--white);
+        }
+        .filters input[type="search"] { flex: 1; min-width: 160px; }
+        .list-count { font-size: 12px; color: var(--gray-400); }
+
+        .priority-badge {
+            display: inline-flex; align-items: center;
+            padding: 3px 9px; border-radius: 999px;
+            font-size: 11px; font-weight: 600;
+        }
+        .priority-1 { background: #E8F0E6; color: #5B7A57; }
+        .priority-2 { background: #E8EEF5; color: #4A6E91; }
+        .priority-3 { background: #FDE8E0; color: #B84430; }
+
+        .todo-meta-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
+        .due-date { font-size: 12px; color: var(--gray-400); }
+        .due-date.today { color: #B7791F; font-weight: 600; }
+        .due-date.overdue { color: var(--danger); font-weight: 600; }
+
+        .priority-item-3 { border-left: 3px solid var(--danger); }
+        .priority-item-2 { border-left: 3px solid transparent; }
+        .priority-item-1 { border-left: 3px solid transparent; }
+
+        .btn-edit {
+            background: var(--gray-100); border: none; color: var(--gray-400);
+            cursor: pointer; padding: 10px; border-radius: var(--radius);
+            font-size: 15px; transition: all 0.2s ease; opacity: 0.8;
+            display: flex; align-items: center; justify-content: center;
+        }
+        .btn-edit:hover { background: #E8EEF5; color: #4A6E91; opacity: 1; transform: scale(1.08); }
+
+        .stat-item .count.danger { color: var(--danger); }
+
+        .modal {
+            display: none; position: fixed; inset: 0;
+            background: rgba(42,36,32,0.42); z-index: 1000;
+            align-items: center; justify-content: center; padding: 16px;
+        }
+        .modal.show { display: flex; }
+        .modal-content {
+            background: var(--white); border-radius: var(--radius-xl);
+            padding: 28px; width: 100%; max-width: 520px;
+            max-height: 90vh; overflow-y: auto;
+            box-shadow: var(--shadow-lg); border: 1px solid rgba(212,200,188,0.4);
+        }
+        .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+        .modal-header h2 { font-family: 'Noto Serif SC', serif; font-size: 19px; color: var(--gray-800); }
+        .btn-close { background: none; border: none; font-size: 24px; color: var(--gray-400); cursor: pointer; }
+        .btn-close:hover { color: var(--gray-700); }
+        .form-group { margin-bottom: 16px; }
+        .form-group label { display: block; font-size: 13px; color: var(--gray-600); margin-bottom: 7px; }
+        .form-group input, .form-group select {
+            width: 100%; padding: 11px 13px;
+            border: 2px solid var(--gray-200); border-radius: var(--radius);
+            font-size: 14px; background: var(--gray-100); color: var(--gray-700);
+            font-family: 'Noto Sans SC', sans-serif;
+        }
+        .form-group input:focus, .form-group select:focus {
+            outline: none; border-color: var(--terracotta); background: var(--white);
+            box-shadow: 0 0 0 3px rgba(196,102,74,0.08);
+        }
+        .form-row { display: flex; gap: 14px; }
+        .form-row .form-group { flex: 1; }
+        .modal-footer { display: flex; justify-content: flex-end; gap: 10px; margin-top: 22px; }
+        .btn-cancel {
+            background: var(--gray-100); color: var(--gray-600); border: none;
+            padding: 11px 20px; border-radius: var(--radius); font-size: 14px;
+            cursor: pointer; font-family: 'Noto Sans SC', sans-serif;
+        }
+        .btn-cancel:hover { background: var(--gray-200); }
+        .btn-primary {
+            background: var(--terracotta); color: white; border: none;
+            padding: 11px 22px; border-radius: var(--radius); font-size: 14px;
+            font-weight: 600; cursor: pointer; font-family: 'Noto Sans SC', sans-serif;
+        }
+        .btn-primary:hover:not(:disabled) { background: var(--terracotta-hover); }
+        .btn-primary:disabled { opacity: 0.6; cursor: not-allowed; }
+
+        @media (max-width: 480px) {
+            .filters { padding: 12px 18px; }
+            .filters select { flex: 1; }
+            .form-row { flex-direction: column; gap: 0; }
+        }
+
     </style>
 </head>
 <body>
@@ -655,6 +778,7 @@
                 <div class="user-info">
                     <span class="username" id="username"></span>
                     <span class="reminder-info" id="reminderInfo">提醒加载中...</span>
+                    <a class="btn-settings" href="/settings">设置</a>
                     <button class="btn-logout" onclick="handleLogout()">退出</button>
                 </div>
             </div>
@@ -670,11 +794,15 @@
             <div class="stats">
                 <div class="stat-item">
                     <span class="count" id="totalCount">0</span>
-                    <span id="totalLabel">今日待办</span>
+                    <span id="totalLabel">未完成</span>
                 </div>
                 <div class="stat-item">
                     <span class="count" id="completedCount">0</span>
                     <span>已完成</span>
+                </div>
+                <div class="stat-item">
+                    <span class="count danger" id="overdueCount">0</span>
+                    <span>已逾期</span>
                 </div>
             </div>
         </div>
@@ -689,8 +817,22 @@
                 添加新待办
             </h2>
             <div class="input-group">
-                <input type="text" id="todoTitle" placeholder="输入待办事项标题..." maxlength="100">
-                <input type="text" id="todoDescription" placeholder="添加描述（可选）..." maxlength="500">
+                <input type="text" id="todoTitle" placeholder="输入待办事项标题..." maxlength="200">
+                <input type="text" id="todoDescription" placeholder="添加描述（可选）..." maxlength="2000">
+                <div class="meta-inputs">
+                    <label class="meta-field">
+                        <span>截止日期（可选）</span>
+                        <input type="date" id="todoDueDate">
+                    </label>
+                    <label class="meta-field">
+                        <span>优先级</span>
+                        <select id="todoPriority">
+                            <option value="1">低</option>
+                            <option value="2" selected>普通</option>
+                            <option value="3">高</option>
+                        </select>
+                    </label>
+                </div>
                 <button class="btn-add" id="addBtn" onclick="addTodo()">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                         <line x1="12" y1="5" x2="12" y2="19"></line>
@@ -710,6 +852,27 @@
                     </svg>
                     待办事项
                 </h2>
+                <span class="list-count" id="listCount"></span>
+            </div>
+            <div class="filters">
+                <select id="filterStatus" onchange="reloadTodos()">
+                    <option value="">全部状态</option>
+                    <option value="active">未完成</option>
+                    <option value="completed">已完成</option>
+                </select>
+                <select id="filterPriority" onchange="reloadTodos()">
+                    <option value="">全部优先级</option>
+                    <option value="3">高</option>
+                    <option value="2">普通</option>
+                    <option value="1">低</option>
+                </select>
+                <select id="filterSort" onchange="reloadTodos()">
+                    <option value="created_desc">最新创建</option>
+                    <option value="due_asc">按截止日期</option>
+                    <option value="priority_desc">按优先级</option>
+                    <option value="created_asc">最早创建</option>
+                </select>
+                <input type="search" id="searchInput" placeholder="搜索标题或描述..." oninput="handleSearch()">
             </div>
             <div class="todo-items" id="todoItems">
                 <div class="empty-state">
@@ -730,6 +893,43 @@
         </div>
     </div>
 
+    <div class="modal" id="editModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>编辑待办</h2>
+                <button class="btn-close" onclick="closeEditModal()">&times;</button>
+            </div>
+            <form id="editForm" onsubmit="saveEdit(event)">
+                <div class="form-group">
+                    <label for="editTitle">标题</label>
+                    <input type="text" id="editTitle" maxlength="200" required>
+                </div>
+                <div class="form-group">
+                    <label for="editDescription">描述</label>
+                    <input type="text" id="editDescription" maxlength="2000">
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="editDueDate">截止日期</label>
+                        <input type="date" id="editDueDate">
+                    </div>
+                    <div class="form-group">
+                        <label for="editPriority">优先级</label>
+                        <select id="editPriority">
+                            <option value="1">低</option>
+                            <option value="2">普通</option>
+                            <option value="3">高</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn-cancel" onclick="closeEditModal()">取消</button>
+                    <button type="submit" class="btn-primary" id="editSaveBtn">保存</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <div class="toast" id="toast"></div>
 
     <script>
@@ -742,12 +942,13 @@
 
         let currentDate = localDateString();
         let viewMode = 'today';
+        let currentTodos = [];
+        let searchTimer = null;
 
         function applyViewMode() {
             document.getElementById('btnToday').classList.toggle('active', viewMode === 'today');
             document.getElementById('btnAll').classList.toggle('active', viewMode === 'all');
             document.getElementById('pageTitle').textContent = viewMode === 'today' ? '今日待办事项' : '所有待办事项';
-            document.getElementById('totalLabel').textContent = viewMode === 'today' ? '今日待办' : '全部待办';
 
             const showDate = viewMode === 'today';
             document.getElementById('datePicker').style.display = showDate ? '' : 'none';
@@ -757,7 +958,12 @@
         function switchViewMode(mode) {
             viewMode = mode;
             applyViewMode();
+            reloadTodos();
+        }
+
+        function reloadTodos() {
             loadTodos();
+            loadStats();
         }
 
         async function init() {
@@ -766,19 +972,33 @@
             document.getElementById('datePicker').value = currentDate;
             applyViewMode();
             updateDateDisplay();
-            loadTodos();
 
             document.getElementById('datePicker').addEventListener('change', (e) => {
-                currentDate = e.target.value;
+                currentDate = e.target.value || localDateString();
                 updateDateDisplay();
-                loadTodos();
+                reloadTodos();
             });
 
-            document.getElementById('todoTitle').addEventListener('keypress', (e) => {
+            document.getElementById('todoTitle').addEventListener('keydown', (e) => {
                 if (e.key === 'Enter') {
+                    e.preventDefault();
                     addTodo();
                 }
             });
+
+            document.getElementById('editModal').addEventListener('click', (e) => {
+                if (e.target.id === 'editModal') {
+                    closeEditModal();
+                }
+            });
+
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape') {
+                    closeEditModal();
+                }
+            });
+
+            reloadTodos();
         }
 
         async function checkAuth() {
@@ -786,12 +1006,12 @@
                 const response = await fetch('/api/me');
                 if (response.ok) {
                     const user = await response.json();
-                    
+
                     if (user.is_admin) {
                         window.location.href = '/admin';
                         return false;
                     }
-                    
+
                     document.getElementById('username').textContent = user.username;
 
                     const reminderInfo = document.getElementById('reminderInfo');
@@ -803,10 +1023,9 @@
                         reminderInfo.textContent = '每日提醒已关闭';
                     }
                     return true;
-                } else {
-                    window.location.href = '/login';
-                    return false;
                 }
+                window.location.href = '/login';
+                return false;
             } catch (error) {
                 window.location.href = '/login';
                 return false;
@@ -817,12 +1036,9 @@
             if (!confirm('确定要退出登录吗？')) {
                 return;
             }
-            
+
             try {
-                const response = await fetch('/api/logout', {
-                    method: 'POST'
-                });
-                
+                const response = await fetch('/api/logout', { method: 'POST' });
                 if (response.ok) {
                     showToast('已退出登录', 'success');
                     setTimeout(() => {
@@ -840,15 +1056,36 @@
             document.getElementById('dateDisplay').textContent = date.toLocaleDateString('zh-CN', options);
         }
 
+        function buildTodosUrl() {
+            const params = new URLSearchParams();
+            params.set('view', viewMode);
+            if (viewMode === 'today') {
+                params.set('date', currentDate);
+            }
+
+            const status = document.getElementById('filterStatus').value;
+            if (status) {
+                params.set('status', status);
+            }
+
+            const priority = document.getElementById('filterPriority').value;
+            if (priority) {
+                params.set('priority', priority);
+            }
+
+            const keyword = document.getElementById('searchInput').value.trim();
+            if (keyword) {
+                params.set('q', keyword);
+            }
+
+            params.set('sort', document.getElementById('filterSort').value);
+            params.set('limit', '300');
+            return '/api/todos?' + params.toString();
+        }
+
         async function loadTodos() {
             try {
-                let url = '/api/todos';
-                if (viewMode === 'today') {
-                    url += `?view=today&date=${currentDate}`;
-                } else {
-                    url += `?view=all`;
-                }
-                const response = await fetch(url);
+                const response = await fetch(buildTodosUrl());
                 if (!response.ok) {
                     if (response.status === 401) {
                         window.location.href = '/login';
@@ -859,20 +1096,70 @@
                     return;
                 }
                 const todos = await response.json();
-                renderTodos(todos);
+                currentTodos = Array.isArray(todos) ? todos : [];
+                renderTodos(currentTodos);
             } catch (error) {
                 showToast('加载失败，请稍后重试', 'error');
             }
         }
 
+        async function loadStats() {
+            try {
+                const response = await fetch('/api/todos/stats');
+                if (!response.ok) {
+                    return;
+                }
+                const stats = await response.json();
+                document.getElementById('totalCount').textContent = stats.pending;
+                document.getElementById('completedCount').textContent = stats.completed;
+                document.getElementById('overdueCount').textContent = stats.overdue;
+            } catch (error) {
+                // 统计失败不打断主流程
+            }
+        }
+
+        function handleSearch() {
+            clearTimeout(searchTimer);
+            searchTimer = setTimeout(() => {
+                loadTodos();
+            }, 300);
+        }
+
+        function priorityBadge(priority) {
+            const labels = { 1: '低', 2: '普通', 3: '高' };
+            const value = priority || 2;
+            return `<span class="priority-badge priority-${value}">${labels[value] || '普通'}</span>`;
+        }
+
+        function dueDateInfo(todo) {
+            if (!todo.due_date) {
+                return '';
+            }
+            const today = localDateString();
+            let className = '';
+            let label = `截止 ${todo.due_date}`;
+
+            if (!todo.completed) {
+                if (todo.due_date < today) {
+                    className = 'overdue';
+                    label = `已逾期 ${todo.due_date}`;
+                } else if (todo.due_date === today) {
+                    className = 'today';
+                    label = '今天截止';
+                }
+            }
+            return `<span class="due-date ${className}">${label}</span>`;
+        }
+
         function renderTodos(todos) {
             const container = document.getElementById('todoItems');
-            
-            if (!Array.isArray(todos)) {
-                container.innerHTML = '';
-                return;
-            }
-            
+            const listCount = document.getElementById('listCount');
+            listCount.textContent = `${todos.length} 项`;
+
+            const hasFilter = document.getElementById('filterStatus').value
+                || document.getElementById('filterPriority').value
+                || document.getElementById('searchInput').value.trim();
+
             if (todos.length === 0) {
                 container.innerHTML = `
                     <div class="empty-state">
@@ -882,45 +1169,52 @@
                                 <path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"></path>
                             </svg>
                         </div>
-                        <p>暂无待办事项</p>
-                        <p class="sub-text">添加一个新任务开始吧</p>
+                        <p>${hasFilter ? '没有匹配的待办事项' : '暂无待办事项'}</p>
+                        <p class="sub-text">${hasFilter ? '试试调整筛选条件' : '添加一个新任务开始吧'}</p>
                     </div>
                 `;
-            } else {
-                container.innerHTML = todos.map(todo => `
-                    <div class="todo-item ${todo.completed ? 'completed' : ''}" data-id="${todo.id}">
-                        <div class="checkbox ${todo.completed ? 'checked' : ''}" onclick="toggleTodo(${todo.id}, ${!todo.completed})"></div>
-                        <div class="todo-content">
-                            <div class="todo-title">${escapeHtml(todo.title)}</div>
-                            ${todo.description ? `<div class="todo-description">${escapeHtml(todo.description)}</div>` : ''}
-                            <div class="todo-date">${formatDateTime(todo.created_at)}</div>
-                        </div>
-                        <button class="btn-delete" onclick="deleteTodo(${todo.id})" title="删除">
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                <polyline points="3 6 5 6 21 6"></polyline>
-                                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-                            </svg>
-                        </button>
-                    </div>
-                `).join('');
+                return;
             }
 
-            updateStats(todos);
-        }
-
-        function updateStats(todos) {
-            const total = todos.length;
-            const completed = todos.filter(t => t.completed).length;
-            document.getElementById('totalCount').textContent = total - completed;
-            document.getElementById('completedCount').textContent = completed;
+            container.innerHTML = todos.map(todo => `
+                <div class="todo-item priority-item-${todo.priority || 2} ${todo.completed ? 'completed' : ''}" data-id="${todo.id}">
+                    <div class="checkbox ${todo.completed ? 'checked' : ''}" onclick="toggleTodo(${todo.id}, ${!todo.completed})"></div>
+                    <div class="todo-content">
+                        <div class="todo-title">${escapeHtml(todo.title)}</div>
+                        ${todo.description ? `<div class="todo-description">${escapeHtml(todo.description)}</div>` : ''}
+                        <div class="todo-meta-row">
+                            ${priorityBadge(todo.priority)}
+                            ${dueDateInfo(todo)}
+                            <span class="todo-date">${formatDateTime(todo.created_at)}</span>
+                        </div>
+                    </div>
+                    <button class="btn-edit" onclick="openEditModal(${todo.id})" title="编辑">
+                        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                            <path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4z"></path>
+                        </svg>
+                    </button>
+                    <button class="btn-delete" onclick="deleteTodo(${todo.id})" title="删除">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="3 6 5 6 21 6"></polyline>
+                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                        </svg>
+                    </button>
+                </div>
+            `).join('');
         }
 
         async function addTodo() {
             const titleInput = document.getElementById('todoTitle');
             const descInput = document.getElementById('todoDescription');
+            const dueInput = document.getElementById('todoDueDate');
+            const priorityInput = document.getElementById('todoPriority');
             const addBtn = document.getElementById('addBtn');
+
             const title = titleInput.value.trim();
             const description = descInput.value.trim();
+            const dueDate = dueInput.value || null;
+            const priority = parseInt(priorityInput.value, 10) || 2;
 
             if (!title) {
                 showToast('请输入待办事项标题', 'error');
@@ -933,13 +1227,15 @@
                 const response = await fetch('/api/todos', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ title, description })
+                    body: JSON.stringify({ title, description, due_date: dueDate, priority })
                 });
 
                 if (response.ok) {
                     titleInput.value = '';
                     descInput.value = '';
-                    loadTodos();
+                    dueInput.value = '';
+                    priorityInput.value = '2';
+                    reloadTodos();
                     showToast('添加成功', 'success');
                 } else {
                     const data = await response.json();
@@ -952,6 +1248,63 @@
             }
         }
 
+        function openEditModal(id) {
+            const todo = currentTodos.find(item => item.id === id);
+            if (!todo) {
+                return;
+            }
+
+            document.getElementById('editTitle').value = todo.title || '';
+            document.getElementById('editDescription').value = todo.description || '';
+            document.getElementById('editDueDate').value = todo.due_date || '';
+            document.getElementById('editPriority').value = String(todo.priority || 2);
+            document.getElementById('editForm').dataset.id = String(id);
+            document.getElementById('editModal').classList.add('show');
+            document.getElementById('editTitle').focus();
+        }
+
+        function closeEditModal() {
+            document.getElementById('editModal').classList.remove('show');
+        }
+
+        async function saveEdit(event) {
+            event.preventDefault();
+            const id = document.getElementById('editForm').dataset.id;
+            const title = document.getElementById('editTitle').value.trim();
+            const description = document.getElementById('editDescription').value.trim();
+            const dueDate = document.getElementById('editDueDate').value || null;
+            const priority = parseInt(document.getElementById('editPriority').value, 10) || 2;
+
+            if (!title) {
+                showToast('标题不能为空', 'error');
+                return;
+            }
+
+            const saveBtn = document.getElementById('editSaveBtn');
+            saveBtn.disabled = true;
+            try {
+                const response = await fetch(`/api/todos/${id}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ title, description, due_date: dueDate, priority })
+                });
+
+                if (!response.ok) {
+                    const data = await response.json();
+                    showToast(data.error || '保存失败', 'error');
+                    return;
+                }
+
+                closeEditModal();
+                reloadTodos();
+                showToast('已保存', 'success');
+            } catch (error) {
+                showToast('保存失败，请稍后重试', 'error');
+            } finally {
+                saveBtn.disabled = false;
+            }
+        }
+
         async function toggleTodo(id, completed) {
             try {
                 const response = await fetch(`/api/todos/${id}`, {
@@ -961,7 +1314,7 @@
                 });
 
                 if (response.ok) {
-                    loadTodos();
+                    reloadTodos();
                 } else {
                     showToast('更新失败', 'error');
                 }
@@ -976,12 +1329,9 @@
             }
 
             try {
-                const response = await fetch(`/api/todos/${id}`, {
-                    method: 'DELETE'
-                });
-
+                const response = await fetch(`/api/todos/${id}`, { method: 'DELETE' });
                 if (response.ok) {
-                    loadTodos();
+                    reloadTodos();
                     showToast('删除成功', 'success');
                 } else {
                     showToast('删除失败', 'error');
@@ -996,7 +1346,6 @@
             toast.textContent = message;
             toast.className = 'toast ' + type;
             toast.classList.add('show');
-            
             setTimeout(() => {
                 toast.classList.remove('show');
             }, 3000);

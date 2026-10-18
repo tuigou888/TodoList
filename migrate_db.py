@@ -46,6 +46,7 @@ def migrate_database():
                 password TEXT NOT NULL,
                 email TEXT,
                 is_admin INTEGER DEFAULT 0,
+                is_active INTEGER DEFAULT 1,
                 reminder_time INTEGER DEFAULT 540,
                 reminder_enabled INTEGER DEFAULT 1,
                 last_reminded_on DATE,
@@ -65,6 +66,10 @@ def migrate_database():
                 completed INTEGER DEFAULT 0,
                 created_date DATE,
                 created_at TIMESTAMP,
+                due_date DATE,
+                priority INTEGER DEFAULT 2,
+                completed_at TIMESTAMP,
+                updated_at TIMESTAMP,
                 user_id INTEGER NOT NULL,
                 FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
             )
@@ -95,8 +100,23 @@ def migrate_database():
         """
         )
 
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS audit_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                actor_id INTEGER,
+                action TEXT NOT NULL,
+                target_type TEXT,
+                target_id INTEGER,
+                detail TEXT,
+                created_at TIMESTAMP NOT NULL
+            )
+        """
+        )
+
         # 历史字段迁移
         ensure_column(cursor, "users", "is_admin", "INTEGER DEFAULT 0")
+        ensure_column(cursor, "users", "is_active", "INTEGER DEFAULT 1")
         ensure_column(cursor, "users", "last_login_at", "TIMESTAMP")
         ensure_column(cursor, "users", "reminder_time", "INTEGER DEFAULT 540")
         ensure_column(cursor, "users", "reminder_enabled", "INTEGER DEFAULT 1")
@@ -106,6 +126,10 @@ def migrate_database():
 
         ensure_column(cursor, "todos", "user_id", "INTEGER")
         ensure_column(cursor, "todos", "created_date", "DATE")
+        ensure_column(cursor, "todos", "due_date", "DATE")
+        ensure_column(cursor, "todos", "priority", "INTEGER DEFAULT 2")
+        ensure_column(cursor, "todos", "completed_at", "TIMESTAMP")
+        ensure_column(cursor, "todos", "updated_at", "TIMESTAMP")
 
         # 查询索引（与 app.init_db 保持一致）
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_todos_user_id ON todos(user_id)")
@@ -124,6 +148,15 @@ def migrate_database():
         )
         cursor.execute(
             "CREATE INDEX IF NOT EXISTS idx_prr_user_time ON password_reset_requests(user_id, requested_at)"
+        )
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_todos_user_due ON todos(user_id, due_date)"
+        )
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_todos_user_priority ON todos(user_id, priority)"
+        )
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_logs(created_at)"
         )
 
         conn.commit()
