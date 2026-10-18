@@ -3,7 +3,6 @@ Gunicorn 配置文件
 用于配置 Gunicorn 服务器和启动钩子
 """
 
-import os
 import sys
 import logging
 
@@ -16,9 +15,6 @@ logging.basicConfig(
     ]
 )
 logger = logging.getLogger(__name__)
-
-# 添加应用目录到路径
-sys.path.insert(0, '/app')
 
 # 服务器配置
 bind = "0.0.0.0:5145"

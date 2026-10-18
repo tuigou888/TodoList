@@ -1981,16 +1981,3 @@ if __name__ == "__main__":
         start_reminder_scheduler()
 
     app.run(debug=debug, host="0.0.0.0", port=5145)
-
-
-# Gunicorn 启动钩子（在 Gunicorn 环境下启动定时任务）
-def on_starting(server):
-    """Gunicorn 启动时调用"""
-    logger.info("Gunicorn 正在启动...")
-    init_db()
-    start_reminder_scheduler()
-
-
-def when_ready(server):
-    """Gunicorn 准备好接受请求时调用"""
-    logger.info("Gunicorn 已就绪")
