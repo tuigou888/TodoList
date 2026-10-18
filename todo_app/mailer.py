@@ -150,3 +150,96 @@ def build_reminder_email(user, todos, now=None):
     </body>
     </html>
     """
+
+
+def _review_shell(title, body, footer):
+    return f"""
+    <html>
+    <head>
+        <style>
+            body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
+            .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
+            .header {{ background: linear-gradient(135deg, #C4664A 0%, #E08A6C 100%); color: white; padding: 28px; text-align: center; border-radius: 10px 10px 0 0; }}
+            .content {{ background: #f9f9f9; padding: 26px; border-radius: 0 0 10px 10px; }}
+            .stats {{ display: flex; gap: 10px; margin: 16px 0; }}
+            .stat {{ flex: 1; background: white; border-radius: 8px; padding: 12px; text-align: center; }}
+            .stat strong {{ display: block; font-size: 22px; color: #C4664A; }}
+            .todo-item {{ background: white; border-radius: 8px; padding: 10px 14px; margin-bottom: 8px; }}
+            .todo-title {{ font-weight: 600; }}
+            .todo-meta {{ font-size: 12px; color: #888; margin-top: 4px; }}
+            .footer {{ text-align: center; color: #999; margin-top: 20px; font-size: 12px; }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="header"><h1>{html_escape(title)}</h1></div>
+            <div class="content">
+                {body}
+                {footer}
+            </div>
+            <div class="footer"><p>此邮件由系统自动发送，请勿回复。</p></div>
+        </div>
+    </body>
+    </html>
+    """
+
+
+def _todo_items_html(todos):
+    return "".join(
+        f'<div class="todo-item"><div class="todo-title">{html_escape(todo["title"])}</div>'
+        f'<div class="todo-meta">优先级 {todo["priority"]}'
+        + (f' · 截止 {html_escape(todo["due_date"])}' if todo["due_date"] else "")
+        + "</div></div>"
+        for todo in todos
+    )
+
+
+def build_daily_review_email(user, stats, todos, now=None):
+    """每日回顾邮件。"""
+    now = now or datetime.now()
+    if stats.get("mit_total"):
+        mit_line = (
+            f"今日三件事完成 <strong>{stats['mit_completed']}/{stats['mit_total']}</strong>"
+        )
+    else:
+        mit_line = "今日还没有设置三件事，可以在首页用 ☆ 选出最重要的 3 项。"
+
+    body = f"""
+        <p>{html_escape(user["username"])}，这是 {now.strftime("%Y-%m-%d")} 的回顾。</p>
+        <div class="stats">
+            <div class="stat"><strong>{stats["completed_today"]}</strong>今日完成</div>
+            <div class="stat"><strong>{stats["pending"]}</strong>未完成</div>
+            <div class="stat"><strong>{stats["overdue"]}</strong>已逾期</div>
+        </div>
+        <p>{mit_line}</p>
+        <h3>接下来要做的</h3>
+        {_todo_items_html(todos) or "<p>没有未完成的待办，休息一下吧。</p>"}
+    """
+    footer = f'<p style="margin-top:20px;">前往 <a href="{Config.BASE_URL}">待办事项</a> 或 <a href="{Config.BASE_URL}/settings">设置</a> 调整回顾时间。</p>'
+    return _review_shell("每日回顾", body, footer)
+
+
+def build_weekly_review_email(user, stats, todos, now=None):
+    """每周回顾邮件。"""
+    now = now or datetime.now()
+    oldest = ""
+    if stats.get("oldest_title"):
+        oldest = (
+            f'<p>最久未完成：<strong>{html_escape(stats["oldest_title"])}</strong>'
+            f'（创建于 {html_escape(stats["oldest_created_at"] or "")}）</p>'
+        )
+
+    body = f"""
+        <p>{html_escape(user["username"])}，这是本周的回顾。</p>
+        <div class="stats">
+            <div class="stat"><strong>{stats["week_completed"]}</strong>本周完成</div>
+            <div class="stat"><strong>{stats["week_created"]}</strong>本周新增</div>
+            <div class="stat"><strong>{stats["completion_rate"]}%</strong>完成率</div>
+        </div>
+        <p>当前未完成 <strong>{stats["pending"]}</strong> 项，逾期 <strong>{stats["overdue"]}</strong> 项。</p>
+        {oldest}
+        <h3>本周重点</h3>
+        {_todo_items_html(todos) or "<p>本周没有待办记录。</p>"}
+    """
+    footer = f'<p style="margin-top:20px;">前往 <a href="{Config.BASE_URL}">待办事项</a> 查看全部任务。</p>'
+    return _review_shell("每周回顾", body, footer)

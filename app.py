@@ -44,7 +44,7 @@ from config import Config
 
 from todo_app.audit import log_audit
 from todo_app.db import get_db_connection, init_db, now_string
-from todo_app.mailer import send_email
+from todo_app.mailer import build_daily_review_email, send_email
 from todo_app.outbox import (
     EMAIL_MAX_ATTEMPTS,
     enqueue_email,
@@ -54,6 +54,11 @@ from todo_app.scheduler import (
     send_manual_reminder,
     send_scheduled_reminders,
     start_reminder_scheduler,
+)
+from todo_app.reviews import (
+    collect_review_stats,
+    send_daily_reviews,
+    send_weekly_reviews,
 )
 from todo_app.tokens import (
     generate_reset_token,
@@ -771,7 +776,7 @@ def logout():
 def get_current_user():
     conn = get_db_connection()
     user = conn.execute(
-        "SELECT email, reminder_time, reminder_enabled FROM users WHERE id = ?",
+        "SELECT email, reminder_time, reminder_enabled, review_enabled, review_time FROM users WHERE id = ?",
         (session["user_id"],),
     ).fetchone()
     conn.close()
@@ -779,7 +784,11 @@ def get_current_user():
     reminder_time = (
         user["reminder_time"] if user and user["reminder_time"] is not None else 540
     )
+    review_time = (
+        user["review_time"] if user and user["review_time"] is not None else 1200
+    )
     reminder_enabled = bool(user["reminder_enabled"]) if user else True
+    review_enabled = bool(user["review_enabled"]) if user else False
     reminder_hour = reminder_time // 60
     reminder_minute = reminder_time % 60
 
@@ -793,6 +802,10 @@ def get_current_user():
             "reminder_enabled": reminder_enabled,
             "reminder_hour": reminder_hour,
             "reminder_minute": reminder_minute,
+            "review_enabled": review_enabled,
+            "review_time": review_time,
+            "review_hour": review_time // 60,
+            "review_minute": review_time % 60,
         }
     )
 
@@ -1007,6 +1020,89 @@ def capture_page():
             403,
         )
     return render_template("capture.html", token=token)
+
+
+@app.route("/api/me/review", methods=["PUT"])
+@login_required
+def update_review_settings():
+    data = read_json_object()
+    if data is None:
+        return jsonify({"error": "请求必须是 JSON 对象"}), 400
+
+    updates = {}
+    if "review_enabled" in data:
+        if not isinstance(data["review_enabled"], bool):
+            return jsonify({"error": "review_enabled 必须是布尔值"}), 400
+        updates["review_enabled"] = 1 if data["review_enabled"] else 0
+
+    if "review_hour" in data or "review_minute" in data:
+        try:
+            hour = int(data.get("review_hour", 20))
+            minute = int(data.get("review_minute", 0))
+        except (TypeError, ValueError):
+            return jsonify({"error": "请提供有效的回顾时间"}), 400
+        if hour < 0 or hour > 23 or minute < 0 or minute > 59:
+            return jsonify({"error": "回顾时间必须是 0-23 时 / 0-59 分"}), 400
+        updates["review_time"] = hour * 60 + minute
+
+    if not updates:
+        return jsonify({"error": "没有可更新的回顾设置"}), 400
+
+    conn = get_db_connection()
+    assignments = ", ".join(f"{field} = ?" for field in updates)
+    conn.execute(
+        f"UPDATE users SET {assignments} WHERE id = ?",
+        (*updates.values(), session["user_id"]),
+    )
+    log_audit(conn, session["user_id"], "update_review", "user", session["user_id"])
+    conn.commit()
+    user = conn.execute(
+        "SELECT review_enabled, review_time FROM users WHERE id = ?",
+        (session["user_id"],),
+    ).fetchone()
+    conn.close()
+
+    return jsonify(
+        {
+            "message": "回顾设置已更新",
+            "review_enabled": bool(user["review_enabled"]),
+            "review_time": user["review_time"],
+            "review_hour": user["review_time"] // 60,
+            "review_minute": user["review_time"] % 60,
+        }
+    )
+
+
+@app.route("/api/me/review/send", methods=["POST"])
+@login_required
+def send_review_now():
+    conn = get_db_connection()
+    try:
+        user = conn.execute(
+            "SELECT * FROM users WHERE id = ?", (session["user_id"],)
+        ).fetchone()
+        if not user["email"]:
+            return jsonify({"error": "请先在设置中填写邮箱"}), 400
+
+        now = datetime.now()
+        stats = collect_review_stats(conn, user["id"], now)
+        todos = conn.execute(
+            "SELECT * FROM todos WHERE user_id = ? AND completed = 0 AND deleted_at IS NULL ORDER BY priority DESC, created_at ASC LIMIT 10",
+            (user["id"],),
+        ).fetchall()
+        html = build_daily_review_email(user, stats, todos, now)
+        ok = enqueue_email(
+            user["email"],
+            f"今日回顾 - {now.strftime('%Y-%m-%d')}",
+            html,
+            user_id=user["id"],
+        )
+    finally:
+        conn.close()
+
+    if not ok:
+        return jsonify({"error": "回顾邮件入队失败"}), 500
+    return jsonify({"message": "回顾邮件已加入发送队列"})
 
 
 @app.route("/settings")

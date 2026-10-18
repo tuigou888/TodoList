@@ -9,12 +9,15 @@ from config import Config
 from todo_app.db import get_db_connection, now_string
 from todo_app.mailer import build_reminder_email, send_email
 from todo_app.outbox import enqueue_email, process_email_outbox
+from todo_app.reviews import send_daily_reviews, send_weekly_reviews
 
 logger = logging.getLogger(__name__)
 
 REMINDER_SCHEDULER_STARTED = False
 MANUAL_REMINDER_INTERVAL_SECONDS = 60
 LAST_DELETED_PURGE_DATE = None
+
+
 def purge_expired_deleted(days=30):
     """每天清理一次回收站中超过保留期的待办"""
     global LAST_DELETED_PURGE_DATE
@@ -178,6 +181,16 @@ def start_reminder_scheduler():
                 process_email_outbox()
             except Exception:
                 logger.exception("邮件队列处理失败")
+
+            try:
+                send_daily_reviews()
+            except Exception:
+                logger.exception("每日回顾发送失败")
+
+            try:
+                send_weekly_reviews()
+            except Exception:
+                logger.exception("每周回顾发送失败")
 
             # 对齐到下一分钟，避免长期运行产生漂移
             time.sleep(max(60 - datetime.now().second, 1))
