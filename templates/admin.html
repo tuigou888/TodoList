@@ -1092,10 +1092,17 @@
                     return false;
                 }
                 const user = await response.json();
-                if (!user.is_admin) {
+
+                // 存储用户权限
+                window.currentUser = user;
+                window.permissions = user.permissions || [];
+
+                // 检查是否有管理员权限（is_admin 或 users.manage 权限）
+                if (!user.is_admin && !window.permissions.includes('users.manage')) {
                     window.location.href = '/';
                     return false;
                 }
+
                 document.getElementById('adminUsername').textContent = user.username;
                 return true;
             } catch (error) {

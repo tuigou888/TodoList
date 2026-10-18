@@ -1265,6 +1265,10 @@
                 if (response.ok) {
                     const user = await response.json();
 
+                    // 存储用户权限到全局变量
+                    window.currentUser = user;
+                    window.permissions = user.permissions || [];
+
                     if (user.is_admin) {
                         window.location.href = '/admin';
                         return false;
@@ -1280,6 +1284,10 @@
                     } else {
                         reminderInfo.textContent = '每日提醒已关闭';
                     }
+
+                    // 根据权限隐藏/显示元素
+                    applyPermissions();
+
                     return true;
                 }
                 window.location.href = '/login';
@@ -1289,6 +1297,35 @@
                 return false;
             }
         }
+
+        // 根据权限控制 UI 元素显示
+        function applyPermissions() {
+            // 检查权限函数
+            const hasPermission = (perm) => {
+                return window.permissions.includes(perm) || window.currentUser?.is_admin;
+            };
+
+            // 根据权限显示/隐藏元素
+            document.querySelectorAll('[data-permission]').forEach(el => {
+                const requiredPerm = el.dataset.permission;
+                if (requiredPerm) {
+                    const perms = requiredPerm.split(',').map(p => p.trim());
+                    const visible = perms.some(p => hasPermission(p));
+                    el.style.display = visible ? '' : 'none';
+                }
+            });
+
+            // 更新标题和布局
+            const pageTitle = document.getElementById('pageTitle');
+            if (pageTitle && !hasPermission('todos.view_all')) {
+                pageTitle.textContent = '我的待办事项';
+            }
+        }
+
+        // 检查用户是否有权限（供 JS 调用）
+        window.hasPermission = function(permission) {
+            return window.permissions?.includes(permission) || window.currentUser?.is_admin;
+        };
 
         async function handleLogout() {
             if (!confirm('确定要退出登录吗？')) {
