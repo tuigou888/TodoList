@@ -35,10 +35,13 @@
   - `tokens.py`：密码重置令牌生成、校验、消耗与限频
   - `mailer.py`：SMTP 发送（SSL/STARTTLS、超时）与提醒邮件模板
   - `outbox.py`：邮件 outbox 队列、退避重试与清理
-  - `scheduler.py`：每日提醒、手动提醒与邮件队列调度
+  - `scheduler.py`：每日提醒、手动提醒、回顾与邮件队列调度
+  - `nlp.py`：本地自然语言解析（日期/时间/优先级/标签/上下文）
+  - `reviews.py`：每日/每周回顾统计与发送
+  - `ics.py`：ICS 日历订阅生成
   - `audit.py`：管理员操作审计日志
 - **DB**：SQLite，路径由 `DB_NAME` 环境变量决定（默认 `todos.db`）。WAL、外键开启、查询索引齐全；`init_db()` 幂等补字段。
-- **Templates**：`templates/` 共 7 个 HTML（index/login/register/admin/settings/forgot/reset）。内联 CSS/JS，无构建步骤。
+- **Templates**：`templates/` 共 8 个 HTML（index/login/register/admin/settings/forgot/reset/capture）。内联 CSS/JS，无构建步骤。
 - **Session**：Flask-Session 文件存储；`users.session_version` 用于在改密、重置密码、禁用、退出所有设备后使旧会话立即失效。
 - **Reminder**：后台 daemon 线程，每分钟检查；按用户 `reminder_time` 每天最多一封，`last_reminded_on` 在数据库层原子占位，多 worker 安全。
 - **PWA/Theme**：`static/manifest.json`、`static/sw.js`、`static/theme.css`、`static/theme.js`；深色模式通过 `html.dark` 覆盖 CSS 变量，所有页面在 `</head>`/`</body>` 接入。
@@ -54,6 +57,10 @@
 - **Gunicorn**：`when_ready()` 先 `validate_config(strict=True)`，再 `init_db()`、`start_reminder_scheduler()`；配置错误会拒绝启动。
 - **CORS/CSP**：统一在 `cors_response()` 中处理；通配符 Origin 不会同时下发 credentials。
 - **`migrate_db.py`**：幂等迁移脚本，补字段/表/索引；不设置 `ADMIN_PASSWORD` 时生成随机临时密码并打印。
+- **快速捕获**：`api_token_hash` 只存 SHA-256；令牌只显示一次；`/api/capture` 支持 Bearer、查询参数或 JSON。
+- **今日三件事**：`is_mit` + `mit_date`，每天最多 3 项；跨天不再出现在 MIT 区，可重新选择。
+- **回顾**：`review_enabled` / `review_time`（分钟），每日一封；每周一发送周报；均复用 `email_outbox`。
+- **ICS**：`/calendar.ics?token=` 只导出未完成且有截止日期的待办；撤销 token 后链接立即失效。
 
 ## File Boundaries
 
@@ -63,7 +70,10 @@
 | `todo_app/db.py`        | 数据库连接、建表/迁移、时间工具                            |
 | `todo_app/tokens.py`    | 密码重置令牌                                               |
 | `todo_app/outbox.py`    | 邮件队列与重试                                             |
-| `todo_app/scheduler.py` | 每日提醒与邮件队列调度                                     |
+| `todo_app/scheduler.py` | 每日提醒、回顾与邮件队列调度                              |
+| `todo_app/nlp.py`       | 本地自然语言解析                                           |
+| `todo_app/reviews.py`   | 每日/每周回顾                                              |
+| `todo_app/ics.py`       | ICS 日历订阅                                               |
 | `todo_app/validators.py`| 输入校验与待办序列化                                       |
 | `todo_app/security.py`  | 密码/令牌哈希                                              |
 | `todo_app/mailer.py`    | 邮件发送与邮件模板                                         |
@@ -71,7 +81,7 @@
 | `config.py`             | `Config` 类，读取环境变量                                  |
 | `gunicorn.conf.py`      | 生产服务器配置 + 启动钩子                                  |
 | `migrate_db.py`         | 独立迁移脚本（手工运行）                                   |
-| `templates/`            | 7 个页面模板                                               |
+| `templates/`            | 8 个页面模板（含 capture）                                 |
 | `static/`               | PWA manifest、service worker、图标、主题 CSS/JS            |
 | `tests/`                | pytest 测试套件                                            |
 | `pyproject.toml`        | pytest / ruff 配置                                         |

@@ -32,14 +32,17 @@
 
 ### 3.2 待办事项
 
-- [x] 新增（标题、描述、截止日期、优先级）
-- [x] 编辑（标题、描述、截止日期、优先级）
+- [x] 新增（标题、描述、截止日期、时间、优先级）
+- [x] 编辑（标题、描述、截止日期、时间、优先级）
 - [x] 删除
 - [x] 完成/取消完成（记录完成时间）
 - [x] 今天 / 所有视图
 - [x] 状态 / 优先级 / 关键字筛选
+- [x] 标签（#）与上下文（@）展示/筛选
+- [x] 自然语言添加（本地规则解析）
+- [x] 今日三件事（每天最多 3 项）
 - [x] 按创建时间 / 截止日期 / 优先级排序
-- [x] 统计（未完成、已完成、逾期、今日新增）
+- [x] 统计（未完成、已完成、逾期、今日新增、MIT）
 - [x] 用户数据隔离
 
 ### 3.3 个人设置
@@ -47,6 +50,10 @@
 - [x] 基本信息展示（用户名、邮箱、角色）
 - [x] 每日提醒开关与时间
 - [x] 立即发送一次提醒（60 秒限频）
+- [x] 每日/每周回顾开关与时间
+- [x] 立即发送回顾
+- [x] API 令牌生成/撤销
+- [x] ICS 订阅链接生成/撤销
 - [x] 修改密码（校验当前密码，成功后重新登录）
 - [x] 修改邮箱（校验当前密码）
 - [x] 退出所有设备
@@ -75,6 +82,24 @@
 - [x] 端口 465 SSL / 587 STARTTLS，超时保护
 - [x] 邮件链接使用 `BASE_URL`
 - [x] 设置页可立即发送一次
+- [x] 每日回顾（完成/未完成/逾期/MIT）
+- [x] 每周回顾（周一发送本周趋势）
+- [x] 邮件 outbox 队列与失败重试
+
+### 3.8 快速捕获
+
+- [x] 本地自然语言解析（不依赖 AI/外部服务）
+- [x] 中文日期/时间/优先级/标签/上下文
+- [x] API 令牌（哈希存储、只显示一次、可撤销）
+- [x] `/api/capture`（Bearer / 查询参数 / JSON）
+- [x] `/capture` 书签页（令牌校验、Ctrl+Enter 提交）
+
+### 3.9 日历订阅
+
+- [x] `/calendar.ics?token=` 只读订阅
+- [x] 仅导出未完成且有截止日期的待办
+- [x] 定时事件、优先级、标签/上下文、提前 30 分钟提醒
+- [x] 令牌可撤销，撤销后链接立即失效
 
 ### 3.7 体验与可访问性
 
@@ -138,6 +163,11 @@
 | PUT | `/api/me/password` | 修改密码 | 登录 |
 | PUT | `/api/me/email` | 修改邮箱 | 登录 |
 | PUT | `/api/me/reminder` | 提醒设置 | 登录 |
+| PUT | `/api/me/review` | 每日/每周回顾设置 | 登录 |
+| POST | `/api/me/review/send` | 立即发送回顾 | 登录 |
+| GET/POST/DELETE | `/api/me/api-token` | API 令牌状态/生成/撤销 | 登录 |
+| GET/POST/DELETE | `/api/me/ics-token` | 订阅链接状态/生成/撤销 | 登录 |
+| GET | `/capture` | 快速捕获页 | 令牌 |
 | POST | `/api/me/logout-all` | 退出所有设备 | 登录 |
 | GET | `/settings` | 设置页 | 登录 |
 
@@ -145,11 +175,15 @@
 
 | 方法 | 路由 | 功能 | 权限 |
 | --- | --- | --- | --- |
-| GET | `/api/todos` | 列表（`view`/`date`/`status`/`priority`/`q`/`sort`/`limit`） | 登录 |
-| POST | `/api/todos` | 新增 | 登录 |
-| PUT | `/api/todos/<id>` | 更新（title/description/due_date/priority/completed） | 登录 |
+| GET | `/api/todos` | 列表（`view`/`date`/`status`/`priority`/`tag`/`context`/`q`/`sort`/`limit`） | 登录 |
+| POST | `/api/todos` | 新增（支持 `natural: true`、`due_time`/`tags`/`context`） | 登录 |
+| PUT | `/api/todos/<id>` | 更新（title/description/due_date/due_time/priority/tags/context/completed） | 登录 |
 | DELETE | `/api/todos/<id>` | 删除 | 登录 |
-| GET | `/api/todos/stats` | 统计 | 登录 |
+| GET | `/api/todos/mit` | 今日三件事 | 登录 |
+| PUT | `/api/todos/<id>/mit` | 设置/取消今日三件事（每天最多 3 项） | 登录 |
+| GET | `/api/todos/stats` | 统计（含 MIT） | 登录 |
+| POST | `/api/capture` | 令牌快速捕获（Bearer/查询参数/JSON） | 令牌 |
+| GET | `/calendar.ics` | ICS 只读订阅 | 令牌 |
 | POST | `/api/send-reminder-now` | 立即提醒（60 秒限频） | 登录 |
 
 ### 5.3 管理
@@ -186,6 +220,13 @@ CREATE TABLE users (
     last_reminded_on DATE,
     last_manual_reminder_at TIMESTAMP,
     session_version INTEGER DEFAULT 0,
+    api_token_hash TEXT,
+    api_token_created_at TIMESTAMP,
+    review_enabled INTEGER DEFAULT 0,
+    review_time INTEGER DEFAULT 1200,
+    last_review_on DATE,
+    last_weekly_review_on DATE,
+    ics_token TEXT,
     created_at TIMESTAMP DEFAULT (DATETIME('now', 'localtime')),
     last_login_at TIMESTAMP
 );
@@ -202,7 +243,12 @@ CREATE TABLE todos (
     created_date DATE,
     created_at TIMESTAMP,
     due_date DATE,
+    due_time TEXT,
     priority INTEGER DEFAULT 2,
+    tags TEXT,
+    context TEXT,
+    is_mit INTEGER DEFAULT 0,
+    mit_date DATE,
     completed_at TIMESTAMP,
     updated_at TIMESTAMP,
     user_id INTEGER NOT NULL,
@@ -329,3 +375,4 @@ TodoList/
 - **v3.0**：界面重构、Docker 支持
 - **v3.1**：安全响应头、会话管理
 - **v4.0**：截止日期/优先级/编辑/筛选、个人设置页、管理统计与审计；密码升级 scrypt；重置令牌落库；每日提醒按用户时间；pytest/ruff/CI；Docker 非 root 与健康检查
+- **v4.1**：本地自然语言快速捕获与 API 令牌、`/capture` 书签页；今日三件事（MIT）；标签/上下文；每日/每周回顾邮件；ICS 只读日历订阅；PWA 图标与深色模式修复

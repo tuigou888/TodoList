@@ -224,6 +224,27 @@
 
         .danger-zone { border-color: rgba(212,80,58,0.25); }
 
+        .token-result {
+            margin-top: 14px;
+            padding: 14px;
+            background: var(--gray-100);
+            border-radius: var(--radius);
+            font-size: 13px;
+            color: var(--gray-600);
+        }
+        .token-result p { margin: 0 0 6px; }
+        .token-result code {
+            display: block;
+            margin: 0 0 10px;
+            padding: 10px;
+            border-radius: 8px;
+            background: var(--white);
+            font-size: 12px;
+            color: var(--gray-700);
+            word-break: break-all;
+        }
+        .token-result .btn-secondary { margin-top: 2px; }
+
         .toast {
             position: fixed;
             top: 24px;
@@ -303,6 +324,23 @@
         </section>
 
         <section class="card">
+            <h2>每日回顾</h2>
+            <form id="reviewForm" onsubmit="saveReview(event)">
+                <label class="switch-row">
+                    <input type="checkbox" id="reviewEnabled">
+                    <span>启用每日回顾邮件</span>
+                </label>
+                <div class="row">
+                    <label for="reviewTime">回顾时间</label>
+                    <input type="time" id="reviewTime" value="20:00">
+                    <button type="submit" class="btn-primary" id="saveReviewBtn">保存设置</button>
+                    <button type="button" class="btn-secondary" id="sendReviewBtn" onclick="sendReviewNow()">立即发送回顾</button>
+                </div>
+                <p class="hint" style="margin-top: 12px; margin-bottom: 0;">每日回顾包含完成/未完成/逾期与今日三件事；每周一还会发送周报。</p>
+            </form>
+        </section>
+
+        <section class="card">
             <h2>修改密码</h2>
             <form id="passwordForm" class="form-grid" onsubmit="changePassword(event)">
                 <input type="password" id="currentPassword" placeholder="当前密码" autocomplete="current-password" required>
@@ -323,6 +361,28 @@
                     <button type="submit" class="btn-primary" id="changeEmailBtn">更新邮箱</button>
                 </div>
             </form>
+        </section>
+
+        <section class="card">
+            <h2>快速捕获</h2>
+            <p class="hint">生成 API 令牌后，可用 <code>/capture</code> 书签或 iOS 快捷指令快速添加任务。令牌只显示一次。</p>
+            <div class="row">
+                <button type="button" class="btn-primary" id="createTokenBtn" onclick="createApiToken()">生成令牌</button>
+                <button type="button" class="btn-secondary" id="revokeTokenBtn" onclick="revokeApiToken()">撤销令牌</button>
+            </div>
+            <div class="token-result" id="tokenResult" style="display: none;"></div>
+            <p class="hint" id="tokenStatus" style="margin-top: 12px; margin-bottom: 0;">检查中...</p>
+        </section>
+
+        <section class="card">
+            <h2>日历订阅</h2>
+            <p class="hint">把有截止日期的待办同步到 Google/Apple/Outlook 日历（只读）。链接含令牌，请勿公开分享。</p>
+            <div class="row">
+                <button type="button" class="btn-primary" id="createIcsBtn" onclick="createIcsToken()">生成订阅链接</button>
+                <button type="button" class="btn-secondary" id="revokeIcsBtn" onclick="revokeIcsToken()">撤销链接</button>
+            </div>
+            <div class="token-result" id="icsResult" style="display: none;"></div>
+            <p class="hint" id="icsStatus" style="margin-top: 12px; margin-bottom: 0;">检查中...</p>
         </section>
 
         <section class="card danger-zone">
@@ -375,6 +435,12 @@
                 if (user.email) {
                     document.getElementById('newEmail').value = user.email;
                 }
+                document.getElementById('reviewEnabled').checked = !!user.review_enabled;
+                document.getElementById('reviewTime').value =
+                    pad(user.review_hour) + ':' + pad(user.review_minute);
+
+                try { await loadApiToken(); } catch (error) {}
+                try { await loadIcsToken(); } catch (error) {}
             } catch (error) {
                 window.location.href = '/login';
             }
@@ -417,6 +483,162 @@
                 showToast(error.message, 'error');
             } finally {
                 button.disabled = false;
+            }
+        }
+
+        async function saveReview(event) {
+            event.preventDefault();
+            const button = document.getElementById('saveReviewBtn');
+            const enabled = document.getElementById('reviewEnabled').checked;
+            const time = document.getElementById('reviewTime').value || '20:00';
+            const parts = time.split(':');
+            const hour = parseInt(parts[0], 10);
+            const minute = parseInt(parts[1] || '0', 10);
+
+            button.disabled = true;
+            try {
+                await api('/api/me/review', {
+                    method: 'PUT',
+                    body: JSON.stringify({
+                        review_enabled: enabled,
+                        review_hour: hour,
+                        review_minute: minute
+                    })
+                });
+                showToast(enabled ? '回顾设置已保存' : '每日回顾已关闭', 'success');
+            } catch (error) {
+                showToast(error.message, 'error');
+            } finally {
+                button.disabled = false;
+            }
+        }
+
+        async function sendReviewNow() {
+            const button = document.getElementById('sendReviewBtn');
+            button.disabled = true;
+            try {
+                const data = await api('/api/me/review/send', { method: 'POST' });
+                showToast(data.message || '回顾邮件已加入队列', 'success');
+            } catch (error) {
+                showToast(error.message, 'error');
+            } finally {
+                button.disabled = false;
+            }
+        }
+
+        function renderCopyValues(containerId, entries) {
+            const box = document.getElementById(containerId);
+            box.replaceChildren();
+            box.style.display = 'block';
+
+            entries.forEach(([label, value]) => {
+                const text = document.createElement('p');
+                text.textContent = label;
+                const code = document.createElement('code');
+                code.textContent = value;
+                const button = document.createElement('button');
+                button.type = 'button';
+                button.className = 'btn-secondary';
+                button.textContent = '复制';
+                button.onclick = () => copyText(value);
+                box.append(text, code, button);
+            });
+        }
+
+        async function copyText(value) {
+            try {
+                await navigator.clipboard.writeText(value);
+                showToast('已复制', 'success');
+            } catch (error) {
+                showToast('复制失败，请手动选择', 'error');
+            }
+        }
+
+        async function loadApiToken() {
+            const data = await api('/api/me/api-token');
+            document.getElementById('tokenStatus').textContent =
+                data.enabled ? 'API 令牌已生成' : '尚未生成 API 令牌';
+            document.getElementById('createTokenBtn').textContent =
+                data.enabled ? '重新生成令牌' : '生成令牌';
+            document.getElementById('revokeTokenBtn').disabled = !data.enabled;
+            if (!data.enabled) {
+                document.getElementById('tokenResult').style.display = 'none';
+            }
+        }
+
+        async function createApiToken() {
+            const button = document.getElementById('createTokenBtn');
+            button.disabled = true;
+            try {
+                const data = await api('/api/me/api-token', { method: 'POST' });
+                renderCopyValues('tokenResult', [
+                    ['令牌（只显示一次）：', data.token],
+                    ['快速捕获页：', data.capture_url]
+                ]);
+                await loadApiToken();
+                showToast('令牌已生成', 'success');
+            } catch (error) {
+                showToast(error.message, 'error');
+            } finally {
+                button.disabled = false;
+            }
+        }
+
+        async function revokeApiToken() {
+            if (!confirm('撤销后，使用该令牌的快捷指令将失效，确定吗？')) {
+                return;
+            }
+            try {
+                await api('/api/me/api-token', { method: 'DELETE' });
+                document.getElementById('tokenResult').style.display = 'none';
+                await loadApiToken();
+                showToast('令牌已撤销', 'success');
+            } catch (error) {
+                showToast(error.message, 'error');
+            }
+        }
+
+        async function loadIcsToken() {
+            const data = await api('/api/me/ics-token');
+            document.getElementById('icsStatus').textContent =
+                data.enabled ? '订阅链接已生成' : '尚未生成订阅链接';
+            document.getElementById('createIcsBtn').textContent =
+                data.enabled ? '重新生成链接' : '生成订阅链接';
+            document.getElementById('revokeIcsBtn').disabled = !data.enabled;
+
+            if (data.enabled) {
+                renderCopyValues('icsResult', [['订阅链接：', data.url]]);
+            } else {
+                document.getElementById('icsResult').style.display = 'none';
+            }
+        }
+
+        async function createIcsToken() {
+            const button = document.getElementById('createIcsBtn');
+            button.disabled = true;
+            try {
+                const data = await api('/api/me/ics-token', { method: 'POST' });
+                renderCopyValues('icsResult', [['订阅链接：', data.url]]);
+                await loadIcsToken();
+                showToast('订阅链接已生成', 'success');
+            } catch (error) {
+                showToast(error.message, 'error');
+            } finally {
+                button.disabled = false;
+            }
+        }
+
+        async function revokeIcsToken() {
+            if (!confirm('撤销后，已添加的日历订阅将失效，确定吗？')) {
+                return;
+            }
+            try {
+                await api('/api/me/ics-token', { method: 'DELETE' });
+                document.getElementById('icsResult').style.display = 'none';
+                await loadIcsToken();
+                showToast('订阅链接已撤销', 'success');
+            } catch (error) {
+                showToast(error.message, 'error');
             }
         }
 

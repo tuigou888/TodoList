@@ -13,6 +13,10 @@
 - 今天 / 所有视图，按状态、优先级、关键字筛选，按创建时间 / 截止日期 / 优先级排序
 - 统计：未完成、已完成、已逾期
 - 每日提醒邮件：每个用户独立提醒时间与开关，每天最多一封；可在设置页立即发送一次
+- 自然语言快速捕获：`明天15:00 交报告 !高 #工作 @电脑`，支持 API 令牌与 `/capture` 书签页
+- 今日三件事（MIT）：每天最多 3 项，首页聚焦展示，统计与回顾会体现完成情况
+- 每日/每周回顾邮件：完成、未完成、逾期、MIT 与本周趋势
+- ICS 日历订阅：把有截止日期的待办同步到 Google/Apple/Outlook
 - 个人设置：修改密码、修改邮箱、退出所有设备
 - 管理后台：统计卡片、用户搜索/分页/添加/编辑/禁用/删除/重置密码、操作审计、测试邮件
 - 安全：参数化 SQL、HTML 转义、CSP/CORS 安全头、会话版本失效、请求体大小限制、旧密码哈希登录后自动升级
@@ -101,7 +105,10 @@ TodoList/
 │   ├── db.py               # 数据库连接、建表/迁移、时间工具
 │   ├── tokens.py           # 密码重置令牌
 │   ├── outbox.py           # 邮件队列与重试
-│   ├── scheduler.py        # 每日提醒与队列调度
+│   ├── scheduler.py        # 提醒、回顾与队列调度
+│   ├── nlp.py              # 自然语言解析
+│   ├── reviews.py          # 每日/每周回顾
+│   ├── ics.py              # ICS 日历订阅
 │   ├── validators.py       # 输入校验、JSON 解析、待办序列化
 │   ├── security.py         # 密码/令牌哈希
 │   ├── mailer.py           # SMTP 发送与邮件模板
@@ -116,7 +123,9 @@ TodoList/
 ├── requirements-dev.txt
 ├── pyproject.toml          # pytest / ruff 配置
 ├── tests/                  # pytest 测试
-├── templates/              # 7 个 HTML 模板
+├── templates/              # 8 个 HTML 模板（含 capture）
+├── static/                 # PWA manifest、service worker、主题、图标
+├── scripts/                # 图标生成等辅助脚本
 ├── .env.example
 ├── DEPLOYMENT.md
 ├── DOCKER_DEPLOY.md
@@ -124,6 +133,26 @@ TodoList/
 ├── SPEC.md
 └── README.md
 ```
+
+## 快速捕获（差异化）
+
+在首页输入框或 `/capture` 页面直接输入：
+
+```text
+明天下午3点 交报告 !高 #工作 @电脑
+下周一 10:30 开会 !2 #工作
+10月20日 买牛奶 #生活
+```
+
+本地规则解析（不依赖 AI/外部服务）：
+
+- 日期：今天/明天/后天/大后天、下周X、周X、N月N日、YYYY-MM-DD
+- 时间：15:30、下午3点半、晚上8点
+- 优先级：`!高` / `!2` / `!!!`
+- 标签：`#工作`（可多个）
+- 上下文：`@电脑`
+
+设置页可生成 API 令牌，用于 `/capture` 书签或快捷指令；令牌只显示一次，可随时撤销。
 
 ## 管理员功能
 
@@ -147,12 +176,25 @@ TodoList/
 | PUT | `/api/me/password` | 修改密码 | 登录 |
 | PUT | `/api/me/email` | 修改邮箱 | 登录 |
 | PUT | `/api/me/reminder` | 修改提醒时间/开关 | 登录 |
+| PUT | `/api/me/review` | 修改每日回顾设置 | 登录 |
+| POST | `/api/me/review/send` | 立即发送回顾 | 登录 |
+| GET | `/api/me/api-token` | 查看 API 令牌状态 | 登录 |
+| POST | `/api/me/api-token` | 生成 API 令牌（只显示一次） | 登录 |
+| DELETE | `/api/me/api-token` | 撤销 API 令牌 | 登录 |
+| GET | `/api/me/ics-token` | 查看订阅链接状态 | 登录 |
+| POST | `/api/me/ics-token` | 生成 ICS 订阅链接 | 登录 |
+| DELETE | `/api/me/ics-token` | 撤销 ICS 订阅链接 | 登录 |
 | POST | `/api/me/logout-all` | 退出所有设备 | 登录 |
-| GET | `/api/todos` | 列表（view/date/status/priority/q/sort/limit） | 登录 |
-| POST | `/api/todos` | 新建（title/description/due_date/priority） | 登录 |
+| GET | `/api/todos` | 列表（view/date/status/priority/tag/context/q/sort/limit） | 登录 |
+| POST | `/api/todos` | 新建（支持 `natural: true` 自然语言） | 登录 |
 | PUT | `/api/todos/<id>` | 更新（含 completed） | 登录 |
 | DELETE | `/api/todos/<id>` | 删除 | 登录 |
+| GET | `/api/todos/mit` | 今日三件事 | 登录 |
+| PUT | `/api/todos/<id>/mit` | 设置/取消今日三件事 | 登录 |
 | GET | `/api/todos/stats` | 当前用户统计 | 登录 |
+| POST | `/api/capture` | 使用 API 令牌快速捕获 | 令牌 |
+| GET | `/capture` | 快速捕获页面 | 令牌 |
+| GET | `/calendar.ics` | ICS 日历订阅 | 令牌 |
 | POST | `/api/send-reminder-now` | 立即发送提醒（60 秒限频） | 登录 |
 | GET | `/api/admin/users` | 用户列表（分页/搜索） | 管理员 |
 | GET | `/api/admin/users/<id>` | 用户详情 | 管理员 |
