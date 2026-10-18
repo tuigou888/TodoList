@@ -1,5 +1,6 @@
 """输入校验、请求解析与待办序列化。"""
 
+import json
 import re
 from datetime import datetime
 
@@ -78,6 +79,52 @@ def validate_priority(value):
     return priority, None
 
 
+def validate_time(value, field_name="时间"):
+    if value in (None, ""):
+        return None, None
+    if not isinstance(value, str):
+        return None, f"{field_name}格式必须为 HH:MM"
+    value = value.strip()
+    if not re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", value):
+        return None, f"{field_name}格式必须为 HH:MM"
+    return value, None
+
+
+def validate_tags(value):
+    if value is None:
+        return [], None
+    if not isinstance(value, list):
+        return None, "tags 必须是数组"
+    tags = []
+    for item in value[:5]:
+        if not isinstance(item, str):
+            return None, "标签必须是文本"
+        tag = item.strip()[:20]
+        if tag and tag not in tags:
+            tags.append(tag)
+    return tags, None
+
+
+def validate_context(value):
+    if value in (None, ""):
+        return None, None
+    if not isinstance(value, str):
+        return None, "context 必须是文本"
+    return value.strip()[:20] or None, None
+
+
+def _parse_tags(raw):
+    if not raw:
+        return []
+    try:
+        value = json.loads(raw)
+    except (TypeError, ValueError):
+        return []
+    if not isinstance(value, list):
+        return []
+    return [str(item) for item in value if str(item).strip()][:5]
+
+
 def serialize_todo(todo):
     """统一的待办事项输出结构。"""
     return {
@@ -87,6 +134,10 @@ def serialize_todo(todo):
         "completed": bool(todo["completed"]),
         "priority": todo["priority"] if todo["priority"] is not None else 2,
         "due_date": todo["due_date"],
+        "due_time": todo["due_time"],
+        "tags": _parse_tags(todo["tags"]),
+        "context": todo["context"],
+        "is_mit": bool(todo["is_mit"]),
         "created_date": todo["created_date"],
         "created_at": todo["created_at"],
         "completed_at": todo["completed_at"],

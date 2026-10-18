@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>快速捕获 - 每日待办事项</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='2' y='4' width='28' height='24' rx='3' fill='%23C4664A'/%3E%3Crect x='5' y='7' width='22' height='18' rx='2' fill='%23FAF8F5'/%3E%3Cpath d='M8 12 L12 16 L20 8' stroke='%237A9B76' stroke-width='2.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+    <link rel="manifest" href="/static/manifest.json">
+    <meta name="theme-color" content="#C4664A">
+    <link rel="stylesheet" href="/static/theme.css">
+    <link rel="preconnect" href="https://fonts.proxy.ustclug.org">
+    <link href="https://fonts.proxy.ustclug.org/css2?family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --cream: #FAF8F5;
+            --white: #FFFFFF;
+            --terracotta: #C4664A;
+            --terracotta-hover: #A8553A;
+            --sage: #7A9B76;
+            --danger: #D4503A;
+            --gray-100: #F5F0EB;
+            --gray-200: #E8E0D8;
+            --gray-300: #D4C8BC;
+            --gray-400: #A89888;
+            --gray-500: #7A6E62;
+            --gray-600: #5A5047;
+            --gray-700: #3D3530;
+            --gray-800: #2A2420;
+            --shadow-md: 0 4px 20px rgba(42,36,32,0.08);
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            background: var(--cream);
+            color: var(--gray-800);
+            font-family: 'Noto Sans SC', sans-serif;
+        }
+
+        .capture-card {
+            width: 100%;
+            max-width: 560px;
+            background: var(--white);
+            border: 1px solid rgba(212,200,188,0.4);
+            border-radius: 20px;
+            box-shadow: var(--shadow-md);
+            padding: 32px;
+        }
+
+        h1 {
+            margin: 0 0 6px;
+            font-size: 26px;
+            font-family: 'Noto Serif SC', serif;
+        }
+
+        .subtitle {
+            margin: 0 0 18px;
+            color: var(--gray-500);
+            font-size: 14px;
+        }
+
+        .hint {
+            margin: 0 0 20px;
+            padding: 12px 14px;
+            border-radius: 12px;
+            background: var(--gray-100);
+            color: var(--gray-500);
+            font-size: 13px;
+            line-height: 1.8;
+        }
+
+        textarea {
+            width: 100%;
+            min-height: 110px;
+            padding: 14px;
+            border: 2px solid var(--gray-200);
+            border-radius: 14px;
+            background: var(--gray-100);
+            color: var(--gray-800);
+            font-size: 15px;
+            font-family: inherit;
+            line-height: 1.7;
+            resize: vertical;
+        }
+
+        textarea:focus {
+            outline: none;
+            border-color: var(--terracotta);
+            background: var(--white);
+            box-shadow: 0 0 0 4px rgba(196,102,74,0.1);
+        }
+
+        button {
+            width: 100%;
+            margin-top: 14px;
+            padding: 14px;
+            border: none;
+            border-radius: 14px;
+            background: var(--terracotta);
+            color: white;
+            font-size: 15px;
+            font-weight: 600;
+            font-family: inherit;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        button:hover:not(:disabled) { background: var(--terracotta-hover); }
+        button:disabled { opacity: 0.6; cursor: not-allowed; }
+
+        .result {
+            margin-top: 18px;
+            font-size: 14px;
+            color: var(--gray-600);
+            line-height: 1.8;
+        }
+
+        .error {
+            margin-bottom: 16px;
+            padding: 12px 14px;
+            border-radius: 12px;
+            background: #FDE8E0;
+            color: #B84430;
+            font-size: 14px;
+        }
+
+        .back {
+            display: inline-block;
+            margin-top: 18px;
+            color: var(--gray-500);
+            font-size: 13px;
+            text-decoration: none;
+        }
+
+        .back:hover { color: var(--terracotta); }
+
+        .toast {
+            position: fixed;
+            top: 24px;
+            left: 50%;
+            transform: translateX(-50%) translateY(-100px);
+            background: var(--gray-800);
+            color: white;
+            padding: 13px 26px;
+            border-radius: 16px;
+            font-size: 14px;
+            opacity: 0;
+            transition: all 0.35s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+            z-index: 1000;
+        }
+
+        .toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
+        .toast.error { background: var(--danger); }
+        .toast.success { background: var(--sage); }
+
+        html.dark .error { background: #3A2420; color: #E5735C; }
+
+        @media (max-width: 520px) {
+            .capture-card { padding: 22px; }
+            h1 { font-size: 22px; }
+        }
+    </style>
+</head>
+<body>
+    <main class="capture-card">
+        <h1>快速捕获</h1>
+        <p class="subtitle">把想法立刻变成待办，无需打开完整列表。</p>
+
+        {% if error %}
+        <div class="error">{{ error }}</div>
+        {% else %}
+        <p class="hint">
+            示例：<strong>明天下午3点 交报告 !高 #工作 @电脑</strong><br>
+            支持：今天/明天/后天/下周X、N月N日、15:30/下午3点半、!高/!2/!!!、#标签、@上下文
+        </p>
+        <form id="captureForm">
+            <textarea id="captureText" placeholder="输入任务，按 Ctrl+Enter 提交..." autofocus></textarea>
+            <button type="submit" id="captureBtn">添加到待办</button>
+        </form>
+        <div class="result" id="result"></div>
+        {% endif %}
+
+        <a class="back" href="/">← 返回首页</a>
+    </main>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+    <script>
+        const TOKEN = {{ token|tojson }};
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text == null ? '' : String(text);
+            return div.innerHTML;
+        }
+
+        function showToast(message, type = '') {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.className = 'toast ' + type;
+            toast.classList.add('show');
+            setTimeout(() => toast.classList.remove('show'), 3000);
+        }
+
+        const form = document.getElementById('captureForm');
+        if (form) {
+            const textarea = document.getElementById('captureText');
+            const button = document.getElementById('captureBtn');
+            const result = document.getElementById('result');
+
+            async function submitCapture() {
+                const text = textarea.value.trim();
+                if (!text) {
+                    showToast('请输入任务内容', 'error');
+                    return;
+                }
+                button.disabled = true;
+                try {
+                    const response = await fetch('/api/capture', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ token: TOKEN, text })
+                    });
+                    const data = await response.json();
+                    if (!response.ok) {
+                        showToast(data.error || '添加失败', 'error');
+                        return;
+                    }
+                    const parts = ['<strong>' + escapeHtml(data.title) + '</strong>'];
+                    if (data.due_date) {
+                        parts.push(data.due_date + (data.due_time ? ' ' + data.due_time : ''));
+                    }
+                    if (data.priority === 3) {
+                        parts.push('高优先级');
+                    }
+                    if (data.tags && data.tags.length) {
+                        parts.push(data.tags.map(tag => '#' + escapeHtml(tag)).join(' '));
+                    }
+                    result.innerHTML = '已添加：' + parts.join(' · ');
+                    textarea.value = '';
+                    showToast('已添加到待办', 'success');
+                } catch (error) {
+                    showToast('添加失败，请稍后重试', 'error');
+                } finally {
+                    button.disabled = false;
+                }
+            }
+
+            form.addEventListener('submit', (event) => {
+                event.preventDefault();
+                submitCapture();
+            });
+            textarea.addEventListener('keydown', (event) => {
+                if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
+                    event.preventDefault();
+                    submitCapture();
+                }
+            });
+        }
+    </script>
+    <script src="/static/theme.js" defer></script>
+</body>
+</html>

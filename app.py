@@ -32,6 +32,7 @@ from flask_session import Session
 import csv
 import io
 import json
+import secrets
 from datetime import datetime, timedelta
 from functools import wraps
 from html import escape as html_escape
@@ -66,6 +67,7 @@ from todo_app.security import (
     legacy_hash_password,
     verify_password,
 )
+from todo_app.nlp import parse_natural
 from todo_app.validators import (
     MAX_TODO_DESCRIPTION,
     MAX_TODO_TITLE,
@@ -73,11 +75,14 @@ from todo_app.validators import (
     VALID_PRIORITIES,
     read_json_object,
     serialize_todo,
+    validate_context,
     validate_date,
     validate_email,
     validate_password,
     validate_priority,
+    validate_tags,
     validate_text,
+    validate_time,
     validate_username,
 )
 
@@ -852,6 +857,158 @@ def update_reminder_time():
     )
 
 
+def _request_token():
+    """从 Authorization、查询参数或 JSON 中提取 API 令牌"""
+    auth = request.headers.get("Authorization", "")
+    if auth.lower().startswith("bearer "):
+        return auth[7:].strip()
+
+    token = request.args.get("token")
+    if token:
+        return token.strip()
+
+    data = request.get_json(silent=True)
+    if isinstance(data, dict):
+        token = data.get("token")
+        if isinstance(token, str):
+            return token.strip()
+    return ""
+
+
+def authenticate_api_token(token):
+    """按 API 令牌查找启用中的用户"""
+    if not token:
+        return None
+
+    token_hash = hash_reset_token(token)
+    conn = get_db_connection()
+    user = conn.execute(
+        "SELECT * FROM users WHERE api_token_hash = ? AND is_active = 1", (token_hash,)
+    ).fetchone()
+    conn.close()
+    return user
+
+
+@app.route("/api/me/api-token", methods=["GET"])
+@login_required
+def get_api_token_status():
+    conn = get_db_connection()
+    user = conn.execute(
+        "SELECT api_token_hash, api_token_created_at FROM users WHERE id = ?",
+        (session["user_id"],),
+    ).fetchone()
+    conn.close()
+
+    enabled = bool(user and user["api_token_hash"])
+    return jsonify(
+        {
+            "enabled": enabled,
+            "created_at": user["api_token_created_at"] if user else None,
+            "capture_url": f"{BASE_URL}/capture" if enabled else None,
+        }
+    )
+
+
+@app.route("/api/me/api-token", methods=["POST"])
+@login_required
+def create_api_token():
+    token = secrets.token_urlsafe(32)
+    conn = get_db_connection()
+    conn.execute(
+        "UPDATE users SET api_token_hash = ?, api_token_created_at = ? WHERE id = ?",
+        (hash_reset_token(token), now_string(), session["user_id"]),
+    )
+    log_audit(
+        conn, session["user_id"], "create_api_token", "user", session["user_id"]
+    )
+    conn.commit()
+    conn.close()
+
+    return jsonify(
+        {
+            "token": token,
+            "capture_url": f"{BASE_URL}/capture?token={token}",
+            "message": "请妥善保存，令牌只显示一次",
+        }
+    )
+
+
+@app.route("/api/me/api-token", methods=["DELETE"])
+@login_required
+def revoke_api_token():
+    conn = get_db_connection()
+    conn.execute(
+        "UPDATE users SET api_token_hash = NULL, api_token_created_at = NULL WHERE id = ?",
+        (session["user_id"],),
+    )
+    log_audit(
+        conn, session["user_id"], "revoke_api_token", "user", session["user_id"]
+    )
+    conn.commit()
+    conn.close()
+
+    return jsonify({"message": "API 令牌已撤销"})
+
+
+@app.route("/api/capture", methods=["POST"])
+def capture_todo():
+    """使用 API 令牌快速捕获任务（自然语言）"""
+    token = _request_token()
+    user = authenticate_api_token(token)
+    if not user:
+        return jsonify({"error": "令牌无效"}), 401
+
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        data = request.form.to_dict() if request.form else {}
+
+    text = data.get("text") or data.get("title") or ""
+    parsed = parse_natural(text)
+    if parsed is None:
+        return jsonify({"error": "无法解析任务内容"}), 400
+
+    now = datetime.now()
+    conn = get_db_connection()
+    conn.execute(
+        """
+        INSERT INTO todos
+            (title, description, user_id, created_date, created_at, due_date, due_time, priority, tags, context, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            parsed["title"],
+            data.get("description") or "",
+            user["id"],
+            now.strftime("%Y-%m-%d"),
+            now_string(now),
+            parsed["due_date"],
+            parsed["due_time"],
+            parsed["priority"] or 2,
+            json.dumps(parsed["tags"], ensure_ascii=False) if parsed["tags"] else None,
+            parsed["context"],
+            now_string(now),
+        ),
+    )
+    conn.commit()
+    todo_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+    todo = conn.execute("SELECT * FROM todos WHERE id = ?", (todo_id,)).fetchone()
+    conn.close()
+
+    return jsonify(serialize_todo(todo)), 201
+
+
+@app.route("/capture")
+def capture_page():
+    token = request.args.get("token", "").strip()
+    user = authenticate_api_token(token)
+    if not user:
+        return (
+            render_template("capture.html", error="链接无效或令牌已被撤销", token=""),
+            403,
+        )
+    return render_template("capture.html", token=token)
+
+
 @app.route("/settings")
 def settings_page():
     if "user_id" not in session:
@@ -989,6 +1146,8 @@ def get_todos():
     status = request.args.get("status", "")
     keyword = (request.args.get("q") or "").strip()[:100]
     priority = request.args.get("priority", type=int)
+    tag = (request.args.get("tag") or "").strip()[:20]
+    context_filter = (request.args.get("context") or "").strip()[:20]
     sort = request.args.get("sort", "created_desc")
     limit = request.args.get("limit", 200, type=int) or 200
     limit = min(max(limit, 1), 500)
@@ -1022,8 +1181,18 @@ def get_todos():
         params.append(completed_filter)
 
     if keyword:
-        where.append("(title LIKE ? OR description LIKE ?)")
-        params.extend([f"%{keyword}%", f"%{keyword}%"])
+        where.append(
+            "(title LIKE ? OR description LIKE ? OR tags LIKE ? OR context LIKE ?)"
+        )
+        params.extend([f"%{keyword}%"] * 4)
+
+    if tag:
+        where.append("tags LIKE ?")
+        params.append(f'%"{tag}"%')
+
+    if context_filter:
+        where.append("context = ?")
+        params.append(context_filter)
 
     if priority in VALID_PRIORITIES:
         where.append("priority = ?")
@@ -1083,15 +1252,44 @@ def get_todo_stats():
 def add_todo():
     """
     添加待办事项API
-    创建新的待办事项
+    支持自然语言解析（natural=true）与显式字段
     """
     data = read_json_object()
     if data is None:
         return jsonify({"error": "请求必须是 JSON 对象"}), 400
 
-    title, error = validate_text(
-        data.get("title"), "标题", MAX_TODO_TITLE, required=True
-    )
+    natural = data.get("natural") is True
+    if natural:
+        parsed = parse_natural(data.get("title") or "")
+        if parsed is None:
+            return jsonify({"error": "无法从描述中解析出任务标题"}), 400
+        raw_title = parsed["title"]
+        raw_due_date = parsed["due_date"]
+        raw_due_time = parsed["due_time"]
+        raw_priority = parsed["priority"]
+        raw_tags = parsed["tags"]
+        raw_context = parsed["context"]
+
+        # 显式字段优先于自然语言解析结果
+        if data.get("due_date") not in (None, ""):
+            raw_due_date = data["due_date"]
+        if data.get("due_time") not in (None, ""):
+            raw_due_time = data["due_time"]
+        if data.get("priority") is not None:
+            raw_priority = data["priority"]
+        if data.get("tags") is not None:
+            raw_tags = data["tags"]
+        if data.get("context") not in (None, ""):
+            raw_context = data["context"]
+    else:
+        raw_title = data.get("title")
+        raw_due_date = data.get("due_date")
+        raw_due_time = data.get("due_time")
+        raw_priority = data.get("priority")
+        raw_tags = data.get("tags", [])
+        raw_context = data.get("context")
+
+    title, error = validate_text(raw_title, "标题", MAX_TODO_TITLE, required=True)
     if error:
         return jsonify({"error": error}), 400
 
@@ -1101,11 +1299,23 @@ def add_todo():
     if error:
         return jsonify({"error": error}), 400
 
-    due_date, error = validate_date(data.get("due_date"), "截止日期")
+    due_date, error = validate_date(raw_due_date, "截止日期")
     if error:
         return jsonify({"error": error}), 400
 
-    priority, error = validate_priority(data.get("priority"))
+    due_time, error = validate_time(raw_due_time, "截止时间")
+    if error:
+        return jsonify({"error": error}), 400
+
+    priority, error = validate_priority(raw_priority)
+    if error:
+        return jsonify({"error": error}), 400
+
+    tags, error = validate_tags(raw_tags)
+    if error:
+        return jsonify({"error": error}), 400
+
+    context, error = validate_context(raw_context)
     if error:
         return jsonify({"error": error}), 400
 
@@ -1119,8 +1329,8 @@ def add_todo():
     cursor = conn.execute(
         """
         INSERT INTO todos
-            (title, description, user_id, created_date, created_at, due_date, priority, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            (title, description, user_id, created_date, created_at, due_date, due_time, priority, tags, context, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             title,
@@ -1129,7 +1339,10 @@ def add_todo():
             created_date,
             created_at,
             due_date,
+            due_time,
             priority,
+            json.dumps(tags, ensure_ascii=False) if tags else None,
+            context,
             created_at,
         ),
     )
@@ -1179,6 +1392,29 @@ def update_todo(todo_id):
             conn.close()
             return jsonify({"error": error}), 400
         updates["due_date"] = due_date
+        if not due_date and "due_time" not in data:
+            updates["due_time"] = None
+
+    if "due_time" in data:
+        due_time, error = validate_time(data["due_time"], "截止时间")
+        if error:
+            conn.close()
+            return jsonify({"error": error}), 400
+        updates["due_time"] = due_time
+
+    if "tags" in data:
+        tags, error = validate_tags(data["tags"])
+        if error:
+            conn.close()
+            return jsonify({"error": error}), 400
+        updates["tags"] = json.dumps(tags, ensure_ascii=False) if tags else None
+
+    if "context" in data:
+        context, error = validate_context(data["context"])
+        if error:
+            conn.close()
+            return jsonify({"error": error}), 400
+        updates["context"] = context
 
     if "priority" in data:
         priority, error = validate_priority(data["priority"])

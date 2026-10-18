@@ -8,6 +8,8 @@ from datetime import datetime
 logger = logging.getLogger(__name__)
 
 DB_NAME = os.environ.get("DB_NAME", "todos.db")
+
+
 def get_db_connection():
     """
     获取数据库连接
@@ -57,6 +59,13 @@ def init_db():
             last_reminded_on DATE,
             last_manual_reminder_at TIMESTAMP,
             session_version INTEGER DEFAULT 0,
+            api_token_hash TEXT,
+            api_token_created_at TIMESTAMP,
+            review_enabled INTEGER DEFAULT 0,
+            review_time INTEGER DEFAULT 1200,
+            last_review_on DATE,
+            last_weekly_review_on DATE,
+            ics_token TEXT,
             created_at TIMESTAMP DEFAULT (DATETIME('now', 'localtime')),
             last_login_at TIMESTAMP
         )
@@ -72,7 +81,12 @@ def init_db():
             created_date DATE,
             created_at TIMESTAMP,
             due_date DATE,
+            due_time TEXT,
             priority INTEGER DEFAULT 2,
+            tags TEXT,
+            context TEXT,
+            is_mit INTEGER DEFAULT 0,
+            mit_date DATE,
             completed_at TIMESTAMP,
             updated_at TIMESTAMP,
             deleted_at TIMESTAMP,
@@ -159,10 +173,22 @@ def init_db():
     ensure_column(conn, "users", "last_reminded_on", "DATE")
     ensure_column(conn, "users", "last_manual_reminder_at", "TIMESTAMP")
     ensure_column(conn, "users", "session_version", "INTEGER DEFAULT 0")
+    ensure_column(conn, "users", "api_token_hash", "TEXT")
+    ensure_column(conn, "users", "api_token_created_at", "TIMESTAMP")
+    ensure_column(conn, "users", "review_enabled", "INTEGER DEFAULT 0")
+    ensure_column(conn, "users", "review_time", "INTEGER DEFAULT 1200")
+    ensure_column(conn, "users", "last_review_on", "DATE")
+    ensure_column(conn, "users", "last_weekly_review_on", "DATE")
+    ensure_column(conn, "users", "ics_token", "TEXT")
     ensure_column(conn, "todos", "user_id", "INTEGER")
     ensure_column(conn, "todos", "created_date", "DATE")
     ensure_column(conn, "todos", "due_date", "DATE")
+    ensure_column(conn, "todos", "due_time", "TEXT")
     ensure_column(conn, "todos", "priority", "INTEGER DEFAULT 2")
+    ensure_column(conn, "todos", "tags", "TEXT")
+    ensure_column(conn, "todos", "context", "TEXT")
+    ensure_column(conn, "todos", "is_mit", "INTEGER DEFAULT 0")
+    ensure_column(conn, "todos", "mit_date", "DATE")
     ensure_column(conn, "todos", "completed_at", "TIMESTAMP")
     ensure_column(conn, "todos", "updated_at", "TIMESTAMP")
     ensure_column(conn, "todos", "deleted_at", "TIMESTAMP")
@@ -193,6 +219,9 @@ def init_db():
     )
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_todos_user_deleted ON todos(user_id, deleted_at)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_todos_user_mit ON todos(user_id, is_mit, mit_date)"
     )
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_logs(created_at)"

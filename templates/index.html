@@ -698,6 +698,18 @@
         .priority-3 { background: #FDE8E0; color: #B84430; }
 
         .todo-meta-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
+        .tag-chip {
+            display: inline-flex; align-items: center;
+            padding: 2px 8px; border-radius: 999px;
+            background: var(--gray-100); color: var(--gray-500);
+            font-size: 11px; font-weight: 500;
+        }
+        .context-chip {
+            display: inline-flex; align-items: center;
+            padding: 2px 8px; border-radius: 999px;
+            background: var(--gray-100); color: var(--terracotta);
+            font-size: 11px; font-weight: 500;
+        }
         .due-date { font-size: 12px; color: var(--gray-400); }
         .due-date.today { color: #B7791F; font-weight: 600; }
         .due-date.overdue { color: var(--danger); font-weight: 600; }
@@ -857,7 +869,7 @@
                 添加新待办
             </h2>
             <div class="input-group">
-                <input type="text" id="todoTitle" placeholder="输入待办事项标题..." maxlength="200">
+                <input type="text" id="todoTitle" placeholder="例如：明天下午3点 交报告 !高 #工作" maxlength="200">
                 <input type="text" id="todoDescription" placeholder="添加描述（可选）..." maxlength="2000">
                 <div class="meta-inputs">
                     <label class="meta-field">
@@ -912,7 +924,7 @@
                     <option value="priority_desc">按优先级</option>
                     <option value="created_asc">最早创建</option>
                 </select>
-                <input type="search" id="searchInput" placeholder="搜索标题或描述..." oninput="handleSearch()">
+                <input type="search" id="searchInput" placeholder="搜索标题/描述/标签..." oninput="handleSearch()">
                 <button type="button" class="btn-export" onclick="exportTodos('csv')">导出 CSV</button>
             </div>
             <div class="bulk-bar" id="bulkBar">
@@ -1274,6 +1286,8 @@
                         <div class="todo-meta-row">
                             ${priorityBadge(todo.priority)}
                             ${dueDateInfo(todo)}
+                            ${(todo.tags || []).map(tag => `<span class="tag-chip">#${escapeHtml(tag)}</span>`).join('')}
+                            ${todo.context ? `<span class="context-chip">@${escapeHtml(todo.context)}</span>` : ''}
                             <span class="todo-date">${isTrash ? '删除于 ' + formatDateTime(todo.deleted_at) : formatDateTime(todo.created_at)}</span>
                         </div>
                     </div>
@@ -1384,7 +1398,7 @@
                 const response = await fetch('/api/todos', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ title, description, due_date: dueDate, priority })
+                    body: JSON.stringify({ title, description, due_date: dueDate, due_time: null, priority, natural: true })
                 });
 
                 if (response.ok) {
