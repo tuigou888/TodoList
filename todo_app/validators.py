@@ -91,6 +91,7 @@ def serialize_todo(todo):
         "created_at": todo["created_at"],
         "completed_at": todo["completed_at"],
         "updated_at": todo["updated_at"],
+        "deleted_at": todo["deleted_at"],
     }
 
 

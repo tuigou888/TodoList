@@ -17,8 +17,20 @@ logger = logging.getLogger(__name__)
 # 设置时区为中国标准时间
 os.environ["TZ"] = "Asia/Shanghai"
 
-from flask import Flask, render_template, request, jsonify, session, redirect, url_for
+from flask import (
+    Flask,
+    Response,
+    jsonify,
+    redirect,
+    render_template,
+    request,
+    session,
+    url_for,
+)
 from flask_session import Session
+import csv
+import io
+import json
 import sqlite3
 from datetime import datetime, timedelta
 from functools import wraps
@@ -261,6 +273,7 @@ def init_db():
             priority INTEGER DEFAULT 2,
             completed_at TIMESTAMP,
             updated_at TIMESTAMP,
+            deleted_at TIMESTAMP,
             user_id INTEGER NOT NULL,
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
         )
@@ -332,6 +345,7 @@ def init_db():
     ensure_column(conn, "todos", "priority", "INTEGER DEFAULT 2")
     ensure_column(conn, "todos", "completed_at", "TIMESTAMP")
     ensure_column(conn, "todos", "updated_at", "TIMESTAMP")
+    ensure_column(conn, "todos", "deleted_at", "TIMESTAMP")
 
     # 常用查询索引：按用户、完成状态、日期检索
     conn.execute("CREATE INDEX IF NOT EXISTS idx_todos_user_id ON todos(user_id)")
@@ -356,6 +370,9 @@ def init_db():
     )
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_todos_user_priority ON todos(user_id, priority)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_todos_user_deleted ON todos(user_id, deleted_at)"
     )
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_logs(created_at)"
@@ -818,9 +835,33 @@ def handle_server_error(error):
     return "服务器内部错误", 500
 
 
+LAST_DELETED_PURGE_DATE = None
+
+
+def purge_expired_deleted(days=30):
+    """每天清理一次回收站中超过保留期的待办"""
+    global LAST_DELETED_PURGE_DATE
+    today = datetime.now().strftime("%Y-%m-%d")
+    if LAST_DELETED_PURGE_DATE == today:
+        return 0
+    LAST_DELETED_PURGE_DATE = today
+
+    cutoff = now_string(datetime.now() - timedelta(days=days))
+    conn = get_db_connection()
+    cursor = conn.execute(
+        "DELETE FROM todos WHERE deleted_at IS NOT NULL AND deleted_at < ?",
+        (cutoff,),
+    )
+    conn.commit()
+    conn.close()
+    if cursor.rowcount:
+        logger.info("已清理 %s 条过期回收站待办", cursor.rowcount)
+    return cursor.rowcount
+
+
 def get_unfinished_todos(conn, user_id):
     return conn.execute(
-        "SELECT * FROM todos WHERE user_id = ? AND completed = 0 ORDER BY created_at DESC",
+        "SELECT * FROM todos WHERE user_id = ? AND completed = 0 AND deleted_at IS NULL ORDER BY created_at DESC",
         (user_id,),
     ).fetchall()
 
@@ -846,6 +887,8 @@ def send_scheduled_reminders():
     按用户设置的 reminder_time 发送每日提醒。
     通过 last_reminded_on 原子占位，保证每个用户每天最多一封（多进程安全）。
     """
+    purge_expired_deleted()
+
     if not Config.MAIL_ENABLED:
         return 0
 
@@ -1362,6 +1405,7 @@ def get_todos():
         return jsonify({"error": error}), 400
 
     view = request.args.get("view", "today")
+    trash = request.args.get("trash") == "1" or view == "trash"
     status = request.args.get("status", "")
     keyword = (request.args.get("q") or "").strip()[:100]
     priority = request.args.get("priority", type=int)
@@ -1369,7 +1413,8 @@ def get_todos():
     limit = request.args.get("limit", 200, type=int) or 200
     limit = min(max(limit, 1), 500)
 
-    where = ["user_id = ?"]
+    deleted_filter = "deleted_at IS NOT NULL" if trash else "deleted_at IS NULL"
+    where = ["user_id = ?", deleted_filter]
     params = [session["user_id"]]
 
     if date:
@@ -1380,6 +1425,8 @@ def get_todos():
         completed_filter = None
     elif view == "completed":
         completed_filter = 1
+    elif trash:
+        completed_filter = None
     else:
         completed_filter = 0
 
@@ -1402,12 +1449,14 @@ def get_todos():
         where.append("priority = ?")
         params.append(priority)
 
+    default_order = "deleted_at DESC" if trash else "created_at DESC"
     order_by = {
         "created_desc": "created_at DESC",
         "created_asc": "created_at ASC",
         "due_asc": "CASE WHEN due_date IS NULL THEN 1 ELSE 0 END, due_date ASC, created_at DESC",
         "priority_desc": "priority DESC, created_at DESC",
-    }.get(sort, "created_at DESC")
+        "deleted_desc": "deleted_at DESC",
+    }.get(sort, default_order)
 
     sql = f"SELECT * FROM todos WHERE {' AND '.join(where)} ORDER BY {order_by} LIMIT ?"
     params.append(limit)
@@ -1432,7 +1481,7 @@ def get_todo_stats():
                SUM(CASE WHEN completed = 1 THEN 1 ELSE 0 END) AS completed,
                SUM(CASE WHEN completed = 0 AND due_date IS NOT NULL AND due_date < ? THEN 1 ELSE 0 END) AS overdue,
                SUM(CASE WHEN created_date = ? THEN 1 ELSE 0 END) AS created_today
-        FROM todos WHERE user_id = ?
+        FROM todos WHERE user_id = ? AND deleted_at IS NULL
         """,
         (today, today, session["user_id"]),
     ).fetchone()
@@ -1527,7 +1576,8 @@ def update_todo(todo_id):
 
     conn = get_db_connection()
     todo = conn.execute(
-        "SELECT * FROM todos WHERE id = ? AND user_id = ?", (todo_id, user_id)
+        "SELECT * FROM todos WHERE id = ? AND user_id = ? AND deleted_at IS NULL",
+        (todo_id, user_id),
     ).fetchone()
 
     if not todo:
@@ -1595,14 +1645,12 @@ def update_todo(todo_id):
 @app.route("/api/todos/<int:todo_id>", methods=["DELETE"])
 @login_required
 def delete_todo(todo_id):
-    """
-    删除待办事项API
-    删除指定的待办事项
-    """
-    user_id = session["user_id"]
+    """把待办移入回收站（软删除）"""
+    now = now_string()
     conn = get_db_connection()
     cursor = conn.execute(
-        "DELETE FROM todos WHERE id = ? AND user_id = ?", (todo_id, user_id)
+        "UPDATE todos SET deleted_at = ?, updated_at = ? WHERE id = ? AND user_id = ? AND deleted_at IS NULL",
+        (now, now, todo_id, session["user_id"]),
     )
     conn.commit()
     conn.close()
@@ -1610,7 +1658,177 @@ def delete_todo(todo_id):
     if cursor.rowcount == 0:
         return jsonify({"error": "待办事项不存在"}), 404
 
-    return jsonify({"message": "删除成功"})
+    return jsonify({"message": "已移入回收站"})
+
+
+@app.route("/api/todos/<int:todo_id>/restore", methods=["POST"])
+@login_required
+def restore_todo(todo_id):
+    """从回收站恢复待办"""
+    conn = get_db_connection()
+    cursor = conn.execute(
+        "UPDATE todos SET deleted_at = NULL, updated_at = ? WHERE id = ? AND user_id = ? AND deleted_at IS NOT NULL",
+        (now_string(), todo_id, session["user_id"]),
+    )
+    conn.commit()
+    conn.close()
+
+    if cursor.rowcount == 0:
+        return jsonify({"error": "待办事项不在回收站中"}), 404
+
+    return jsonify({"message": "已恢复"})
+
+
+@app.route("/api/todos/<int:todo_id>/purge", methods=["DELETE"])
+@login_required
+def purge_todo(todo_id):
+    """从回收站彻底删除"""
+    conn = get_db_connection()
+    cursor = conn.execute(
+        "DELETE FROM todos WHERE id = ? AND user_id = ? AND deleted_at IS NOT NULL",
+        (todo_id, session["user_id"]),
+    )
+    conn.commit()
+    conn.close()
+
+    if cursor.rowcount == 0:
+        return jsonify({"error": "待办事项不在回收站中"}), 404
+
+    return jsonify({"message": "已彻底删除"})
+
+
+def parse_todo_ids(values):
+    """校验批量操作 ID 列表"""
+    if not isinstance(values, list) or not values or len(values) > 200:
+        return None
+
+    ids = []
+    for value in values:
+        if isinstance(value, bool):
+            return None
+        try:
+            todo_id = int(value)
+        except (TypeError, ValueError):
+            return None
+        if todo_id <= 0:
+            return None
+        ids.append(todo_id)
+    return ids
+
+
+@app.route("/api/todos/batch", methods=["POST"])
+@login_required
+def batch_todos():
+    """批量完成/删除/恢复/彻底删除/修改优先级/截止日期"""
+    data = read_json_object()
+    if data is None:
+        return jsonify({"error": "请求必须是 JSON 对象"}), 400
+
+    ids = parse_todo_ids(data.get("ids"))
+    if not ids:
+        return jsonify({"error": "ids 必须是非空数组，最多 200 项"}), 400
+
+    action = data.get("action")
+    now = now_string()
+    placeholders = ", ".join("?" for _ in ids)
+    user_id = session["user_id"]
+
+    if action == "complete":
+        sql = f"UPDATE todos SET completed = 1, completed_at = ?, updated_at = ? WHERE user_id = ? AND deleted_at IS NULL AND id IN ({placeholders})"
+        params = [now, now, user_id, *ids]
+    elif action == "uncomplete":
+        sql = f"UPDATE todos SET completed = 0, completed_at = NULL, updated_at = ? WHERE user_id = ? AND deleted_at IS NULL AND id IN ({placeholders})"
+        params = [now, user_id, *ids]
+    elif action == "delete":
+        sql = f"UPDATE todos SET deleted_at = ?, updated_at = ? WHERE user_id = ? AND deleted_at IS NULL AND id IN ({placeholders})"
+        params = [now, now, user_id, *ids]
+    elif action == "restore":
+        sql = f"UPDATE todos SET deleted_at = NULL, updated_at = ? WHERE user_id = ? AND deleted_at IS NOT NULL AND id IN ({placeholders})"
+        params = [now, user_id, *ids]
+    elif action == "purge":
+        sql = f"DELETE FROM todos WHERE user_id = ? AND deleted_at IS NOT NULL AND id IN ({placeholders})"
+        params = [user_id, *ids]
+    elif action == "priority":
+        priority, error = validate_priority(data.get("priority"))
+        if error:
+            return jsonify({"error": error}), 400
+        sql = f"UPDATE todos SET priority = ?, updated_at = ? WHERE user_id = ? AND deleted_at IS NULL AND id IN ({placeholders})"
+        params = [priority, now, user_id, *ids]
+    elif action == "due_date":
+        due_date, error = validate_date(data.get("due_date"), "截止日期")
+        if error:
+            return jsonify({"error": error}), 400
+        sql = f"UPDATE todos SET due_date = ?, updated_at = ? WHERE user_id = ? AND deleted_at IS NULL AND id IN ({placeholders})"
+        params = [due_date, now, user_id, *ids]
+    else:
+        return jsonify({"error": "不支持的批量操作"}), 400
+
+    conn = get_db_connection()
+    cursor = conn.execute(sql, params)
+    conn.commit()
+    conn.close()
+
+    return jsonify({"message": "批量操作完成", "updated": cursor.rowcount})
+
+
+def csv_safe(value):
+    """避免 CSV 公式注入"""
+    text = "" if value is None else str(value)
+    if text and text[0] in ("=", "+", "-", "@"):
+        return "'" + text
+    return text
+
+
+@app.route("/api/todos/export", methods=["GET"])
+@login_required
+def export_todos():
+    """导出当前用户未删除的待办（CSV/JSON）"""
+    fmt = (request.args.get("format") or "csv").lower()
+    if fmt not in ("csv", "json"):
+        return jsonify({"error": "format 只支持 csv 或 json"}), 400
+
+    conn = get_db_connection()
+    todos = conn.execute(
+        "SELECT * FROM todos WHERE user_id = ? AND deleted_at IS NULL ORDER BY created_at DESC",
+        (session["user_id"],),
+    ).fetchall()
+    conn.close()
+
+    rows = [serialize_todo(todo) for todo in todos]
+    filename = f"todos-{datetime.now().strftime('%Y%m%d')}.{fmt}"
+    headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
+
+    if fmt == "json":
+        return Response(
+            json.dumps(rows, ensure_ascii=False, indent=2),
+            mimetype="application/json",
+            headers=headers,
+        )
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(
+        ["id", "标题", "描述", "完成", "优先级", "截止日期", "创建时间", "完成时间"]
+    )
+    for row in rows:
+        writer.writerow(
+            [
+                row["id"],
+                csv_safe(row["title"]),
+                csv_safe(row["description"]),
+                "是" if row["completed"] else "否",
+                row["priority"],
+                row["due_date"] or "",
+                row["created_at"] or "",
+                row["completed_at"] or "",
+            ]
+        )
+
+    return Response(
+        "\ufeff" + output.getvalue(),
+        mimetype="text/csv",
+        headers=headers,
+    )
 
 
 @app.route("/admin")
@@ -1643,15 +1861,18 @@ def admin_stats():
     active_users = conn.execute(
         "SELECT COUNT(*) FROM users WHERE last_login_at >= ?", (week_ago,)
     ).fetchone()[0]
-    todos_total = conn.execute("SELECT COUNT(*) FROM todos").fetchone()[0]
+    todos_total = conn.execute(
+        "SELECT COUNT(*) FROM todos WHERE deleted_at IS NULL"
+    ).fetchone()[0]
     todos_pending = conn.execute(
-        "SELECT COUNT(*) FROM todos WHERE completed = 0"
+        "SELECT COUNT(*) FROM todos WHERE completed = 0 AND deleted_at IS NULL"
     ).fetchone()[0]
     todos_today = conn.execute(
-        "SELECT COUNT(*) FROM todos WHERE created_date = ?", (today,)
+        "SELECT COUNT(*) FROM todos WHERE created_date = ? AND deleted_at IS NULL",
+        (today,),
     ).fetchone()[0]
     todos_overdue = conn.execute(
-        "SELECT COUNT(*) FROM todos WHERE completed = 0 AND due_date IS NOT NULL AND due_date < ?",
+        "SELECT COUNT(*) FROM todos WHERE completed = 0 AND deleted_at IS NULL AND due_date IS NOT NULL AND due_date < ?",
         (today,),
     ).fetchone()[0]
     conn.close()
@@ -1795,7 +2016,7 @@ def get_user_detail(user_id):
         return jsonify({"error": "用户不存在"}), 404
 
     todos = conn.execute(
-        "SELECT * FROM todos WHERE user_id = ? ORDER BY created_at DESC",
+        "SELECT * FROM todos WHERE user_id = ? AND deleted_at IS NULL ORDER BY created_at DESC",
         (user_id,),
     ).fetchall()
     conn.close()
@@ -2061,7 +2282,7 @@ def get_user_todos(user_id):
         return jsonify({"error": "用户不存在"}), 404
 
     todos = conn.execute(
-        "SELECT * FROM todos WHERE user_id = ? ORDER BY created_at DESC",
+        "SELECT * FROM todos WHERE user_id = ? AND deleted_at IS NULL ORDER BY created_at DESC",
         (user_id,),
     ).fetchall()
     conn.close()

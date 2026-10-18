@@ -70,6 +70,7 @@ def migrate_database():
                 priority INTEGER DEFAULT 2,
                 completed_at TIMESTAMP,
                 updated_at TIMESTAMP,
+                deleted_at TIMESTAMP,
                 user_id INTEGER NOT NULL,
                 FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
             )
@@ -130,6 +131,7 @@ def migrate_database():
         ensure_column(cursor, "todos", "priority", "INTEGER DEFAULT 2")
         ensure_column(cursor, "todos", "completed_at", "TIMESTAMP")
         ensure_column(cursor, "todos", "updated_at", "TIMESTAMP")
+        ensure_column(cursor, "todos", "deleted_at", "TIMESTAMP")
 
         # 查询索引（与 app.init_db 保持一致）
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_todos_user_id ON todos(user_id)")
@@ -154,6 +156,9 @@ def migrate_database():
         )
         cursor.execute(
             "CREATE INDEX IF NOT EXISTS idx_todos_user_priority ON todos(user_id, priority)"
+        )
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_todos_user_deleted ON todos(user_id, deleted_at)"
         )
         cursor.execute(
             "CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_logs(created_at)"
