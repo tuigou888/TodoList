@@ -654,7 +654,7 @@
             <div class="header-top">
                 <div class="user-info">
                     <span class="username" id="username"></span>
-                    <span class="reminder-info">通知: 7:00-23:00 每小时</span>
+                    <span class="reminder-info" id="reminderInfo">提醒加载中...</span>
                     <button class="btn-logout" onclick="handleLogout()">退出</button>
                 </div>
             </div>
@@ -670,7 +670,7 @@
             <div class="stats">
                 <div class="stat-item">
                     <span class="count" id="totalCount">0</span>
-                    <span>全部</span>
+                    <span id="totalLabel">今日待办</span>
                 </div>
                 <div class="stat-item">
                     <span class="count" id="completedCount">0</span>
@@ -691,7 +691,7 @@
             <div class="input-group">
                 <input type="text" id="todoTitle" placeholder="输入待办事项标题..." maxlength="100">
                 <input type="text" id="todoDescription" placeholder="添加描述（可选）..." maxlength="500">
-                <button class="btn-add" onclick="addTodo()">
+                <button class="btn-add" id="addBtn" onclick="addTodo()">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                         <line x1="12" y1="5" x2="12" y2="19"></line>
                         <line x1="5" y1="12" x2="19" y2="12"></line>
@@ -733,22 +733,38 @@
     <div class="toast" id="toast"></div>
 
     <script>
-        let currentDate = new Date().toISOString().split('T')[0];
+        function localDateString(date = new Date()) {
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+        }
+
+        let currentDate = localDateString();
         let viewMode = 'today';
+
+        function applyViewMode() {
+            document.getElementById('btnToday').classList.toggle('active', viewMode === 'today');
+            document.getElementById('btnAll').classList.toggle('active', viewMode === 'all');
+            document.getElementById('pageTitle').textContent = viewMode === 'today' ? '今日待办事项' : '所有待办事项';
+            document.getElementById('totalLabel').textContent = viewMode === 'today' ? '今日待办' : '全部待办';
+
+            const showDate = viewMode === 'today';
+            document.getElementById('datePicker').style.display = showDate ? '' : 'none';
+            document.getElementById('dateDisplay').style.display = showDate ? '' : 'none';
+        }
 
         function switchViewMode(mode) {
             viewMode = mode;
-            document.getElementById('btnToday').classList.toggle('active', mode === 'today');
-            document.getElementById('btnAll').classList.toggle('active', mode === 'all');
-            document.getElementById('pageTitle').textContent = mode === 'today' ? '今日待办事项' : '所有待办事项';
+            applyViewMode();
             loadTodos();
         }
 
         async function init() {
             await checkAuth();
-            
-            const today = new Date();
+
             document.getElementById('datePicker').value = currentDate;
+            applyViewMode();
             updateDateDisplay();
             loadTodos();
 
@@ -777,6 +793,15 @@
                     }
                     
                     document.getElementById('username').textContent = user.username;
+
+                    const reminderInfo = document.getElementById('reminderInfo');
+                    if (user.reminder_enabled) {
+                        const hh = String(user.reminder_hour).padStart(2, '0');
+                        const mm = String(user.reminder_minute).padStart(2, '0');
+                        reminderInfo.textContent = `每日提醒 ${hh}:${mm}`;
+                    } else {
+                        reminderInfo.textContent = '每日提醒已关闭';
+                    }
                     return true;
                 } else {
                     window.location.href = '/login';
@@ -886,13 +911,14 @@
         function updateStats(todos) {
             const total = todos.length;
             const completed = todos.filter(t => t.completed).length;
-            document.getElementById('totalCount').textContent = total;
+            document.getElementById('totalCount').textContent = total - completed;
             document.getElementById('completedCount').textContent = completed;
         }
 
         async function addTodo() {
             const titleInput = document.getElementById('todoTitle');
             const descInput = document.getElementById('todoDescription');
+            const addBtn = document.getElementById('addBtn');
             const title = titleInput.value.trim();
             const description = descInput.value.trim();
 
@@ -902,6 +928,7 @@
                 return;
             }
 
+            addBtn.disabled = true;
             try {
                 const response = await fetch('/api/todos', {
                     method: 'POST',
@@ -920,6 +947,8 @@
                 }
             } catch (error) {
                 showToast('添加失败，请稍后重试', 'error');
+            } finally {
+                addBtn.disabled = false;
             }
         }
 
@@ -979,8 +1008,15 @@
             return div.innerHTML;
         }
 
+        function parseDateTime(value) {
+            if (!value) return null;
+            const parsed = new Date(String(value).replace(' ', 'T'));
+            return isNaN(parsed.getTime()) ? null : parsed;
+        }
+
         function formatDateTime(dateStr) {
-            const date = new Date(dateStr);
+            const date = parseDateTime(dateStr);
+            if (!date) return '时间未知';
             const today = new Date();
             const yesterday = new Date(today);
             yesterday.setDate(yesterday.getDate() - 1);

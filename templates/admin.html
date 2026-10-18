@@ -943,10 +943,15 @@
             loadUsers();
         }
 
+        let searchTimer = null;
+
         function handleSearch() {
-            searchQuery = document.getElementById('searchInput').value.trim();
-            currentPage = 1;
-            loadUsers();
+            clearTimeout(searchTimer);
+            searchTimer = setTimeout(() => {
+                searchQuery = document.getElementById('searchInput').value.trim();
+                currentPage = 1;
+                loadUsers();
+            }, 300);
         }
 
         function openAddModal() {
@@ -1182,7 +1187,8 @@
 
         function formatDateTime(dateStr) {
             if (!dateStr) return '-';
-            const date = new Date(dateStr);
+            const date = new Date(String(dateStr).replace(' ', 'T'));
+            if (isNaN(date.getTime())) return '-';
             return date.toLocaleString('zh-CN', {
                 year: 'numeric',
                 month: '2-digit',

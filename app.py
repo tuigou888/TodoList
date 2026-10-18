@@ -25,6 +25,7 @@ from functools import wraps
 import hashlib
 import hmac
 import re
+import secrets
 import smtplib
 from html import escape as html_escape
 from werkzeug.security import check_password_hash, generate_password_hash
@@ -87,7 +88,15 @@ MAX_CONTENT_LENGTH = app.config["MAX_CONTENT_LENGTH"]
 
 # 邮件提醒定时任务状态
 REMINDER_SCHEDULER_STARTED = False  # 定时任务是否已启动
-REMINDER_SENT_TODAY = {}  # 记录今日已发送的邮件（避免重复发送）
+
+# 密码重置令牌配置
+RESET_TOKEN_TTL_SECONDS = 3600  # 令牌有效期：1 小时
+RESET_TOKEN_REQUEST_WINDOW_SECONDS = 300  # 频率统计窗口：5 分钟
+RESET_TOKEN_MAX_REQUESTS = 5  # 窗口内最多申请次数
+RESET_TOKEN_MAX_ACTIVE = 3  # 每个用户最多保留的有效令牌数
+
+# 手动触发提醒的最小间隔，避免被反复点击造成邮件轰炸
+MANUAL_REMINDER_INTERVAL_SECONDS = 60
 
 
 def cors_response(response):
@@ -98,10 +107,13 @@ def cors_response(response):
     if hasattr(Config, "CORS_ENABLED") and Config.CORS_ENABLED:
         origin = request.headers.get("Origin", "")
         allowed_origins = getattr(Config, "ALLOWED_ORIGINS", [])
+        allow_credentials = False
 
         if origin in allowed_origins:
             response.headers["Access-Control-Allow-Origin"] = origin
+            allow_credentials = True
         elif "*" in allowed_origins:
+            # 通配符不能与 credentials 同时使用，否则浏览器会拒绝响应
             response.headers["Access-Control-Allow-Origin"] = "*"
 
         response.headers["Access-Control-Allow-Methods"] = (
@@ -110,15 +122,30 @@ def cors_response(response):
         response.headers["Access-Control-Allow-Headers"] = (
             "Content-Type, Authorization, X-Requested-With"
         )
-        response.headers["Access-Control-Allow-Credentials"] = "true"
+        if allow_credentials:
+            response.headers["Access-Control-Allow-Credentials"] = "true"
         response.headers["Access-Control-Max-Age"] = "3600"
 
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "SAMEORIGIN"
-    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
     response.headers["Content-Security-Policy"] = (
-        "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;"
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline'; "
+        "style-src 'self' 'unsafe-inline' https://fonts.proxy.ustclug.org; "
+        "font-src 'self' https://fonts.gstatic.com https://fonts.proxy.ustclug.org data:; "
+        "img-src 'self' data:; "
+        "connect-src 'self'; "
+        "object-src 'none'; "
+        "base-uri 'self'; "
+        "form-action 'self'; "
+        "frame-ancestors 'self';"
     )
+    if SESSION_COOKIE_SECURE:
+        response.headers["Strict-Transport-Security"] = (
+            "max-age=31536000; includeSubDomains"
+        )
 
     return response
 
@@ -148,6 +175,17 @@ def get_db_connection():
     return conn
 
 
+def ensure_column(conn, table, column, definition):
+    """
+    为已有表补充缺失字段（幂等）。
+    table/column 均来自代码常量，不存在注入风险。
+    """
+    existing = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+    if column not in existing:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+        logger.info("数据库迁移：%s 表新增字段 %s", table, column)
+
+
 def init_db():
     """
     初始化数据库
@@ -167,6 +205,10 @@ def init_db():
             email TEXT,
             is_admin INTEGER DEFAULT 0,
             reminder_time INTEGER DEFAULT 540,
+            reminder_enabled INTEGER DEFAULT 1,
+            last_reminded_on DATE,
+            last_manual_reminder_at TIMESTAMP,
+            session_version INTEGER DEFAULT 0,
             created_at TIMESTAMP DEFAULT (DATETIME('now', 'localtime')),
             last_login_at TIMESTAMP
         )
@@ -186,6 +228,41 @@ def init_db():
         )
     """
     )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS password_reset_tokens (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            token_hash TEXT UNIQUE NOT NULL,
+            user_id INTEGER NOT NULL,
+            created_at TIMESTAMP NOT NULL,
+            expires_at TIMESTAMP NOT NULL,
+            used_at TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        )
+    """
+    )
+
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS password_reset_requests (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            requested_at TIMESTAMP NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        )
+    """
+    )
+
+    # 老数据库补字段（幂等）
+    ensure_column(conn, "users", "is_admin", "INTEGER DEFAULT 0")
+    ensure_column(conn, "users", "reminder_time", "INTEGER DEFAULT 540")
+    ensure_column(conn, "users", "last_login_at", "TIMESTAMP")
+    ensure_column(conn, "users", "reminder_enabled", "INTEGER DEFAULT 1")
+    ensure_column(conn, "users", "last_reminded_on", "DATE")
+    ensure_column(conn, "users", "last_manual_reminder_at", "TIMESTAMP")
+    ensure_column(conn, "users", "session_version", "INTEGER DEFAULT 0")
+    ensure_column(conn, "todos", "user_id", "INTEGER")
+    ensure_column(conn, "todos", "created_date", "DATE")
 
     # 常用查询索引：按用户、完成状态、日期检索
     conn.execute("CREATE INDEX IF NOT EXISTS idx_todos_user_id ON todos(user_id)")
@@ -196,6 +273,15 @@ def init_db():
         "CREATE INDEX IF NOT EXISTS idx_todos_user_date ON todos(user_id, created_date)"
     )
     conn.execute("CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)")
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_prt_user_id ON password_reset_tokens(user_id)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_prt_expires ON password_reset_tokens(expires_at)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_prr_user_time ON password_reset_requests(user_id, requested_at)"
+    )
 
     conn.commit()
     conn.close()
@@ -268,12 +354,14 @@ def login_required(f):
         if not user_id:
             return jsonify({"error": "请先登录"}), 401
 
-        # 校验用户仍然存在：被删除用户的旧会话必须立即失效
+        # 校验用户仍然存在且会话版本一致：被删除/被重置密码用户的旧会话立即失效
         conn = get_db_connection()
-        user = conn.execute("SELECT id FROM users WHERE id = ?", (user_id,)).fetchone()
+        user = conn.execute(
+            "SELECT id, session_version FROM users WHERE id = ?", (user_id,)
+        ).fetchone()
         conn.close()
 
-        if not user:
+        if not user or user["session_version"] != session.get("session_version", 0):
             session.clear()
             return jsonify({"error": "登录状态已失效，请重新登录"}), 401
 
@@ -296,11 +384,11 @@ def admin_required(f):
 
         conn = get_db_connection()
         user = conn.execute(
-            "SELECT is_admin FROM users WHERE id = ?", (user_id,)
+            "SELECT is_admin, session_version FROM users WHERE id = ?", (user_id,)
         ).fetchone()
         conn.close()
 
-        if not user:
+        if not user or user["session_version"] != session.get("session_version", 0):
             session.clear()
             return jsonify({"error": "登录状态已失效，请重新登录"}), 401
 
@@ -362,23 +450,135 @@ def send_email(to_email, subject, html_content):
         return False
 
 
+def now_string(moment=None):
+    """统一的时间字符串格式（本地时间，精确到秒）"""
+    return (moment or datetime.now()).strftime("%Y-%m-%d %H:%M:%S")
+
+
+def hash_reset_token(token):
+    """令牌只以哈希形式落库，数据库泄露时无法直接使用"""
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def cleanup_reset_tokens(conn, now=None):
+    """清理过期或已使用的令牌"""
+    conn.execute(
+        "DELETE FROM password_reset_tokens WHERE expires_at < ? OR used_at IS NOT NULL",
+        (now_string(now),),
+    )
+
+
+def reset_request_allowed(user_id):
+    """同一用户短时间内申请重置的次数限制，避免邮件轰炸"""
+    cutoff = now_string(
+        datetime.now() - timedelta(seconds=RESET_TOKEN_REQUEST_WINDOW_SECONDS)
+    )
+    conn = get_db_connection()
+    count = conn.execute(
+        "SELECT COUNT(*) FROM password_reset_requests WHERE user_id = ? AND requested_at >= ?",
+        (user_id, cutoff),
+    ).fetchone()[0]
+    conn.close()
+    return count < RESET_TOKEN_MAX_REQUESTS
+
+
 def generate_reset_token(user_id):
     """
-    生成密码重置令牌
+    生成密码重置令牌并写入数据库。
     :param user_id: 用户ID
-    :return: 重置令牌
+    :return: 明文令牌（只出现在邮件链接中）
     """
-    import secrets
-
     token = secrets.token_urlsafe(32)
-    RESET_TOKENS[token] = {
-        "user_id": user_id,
-        "expires": datetime.now().timestamp() + 3600,
-    }
+    token_hash = hash_reset_token(token)
+    now = datetime.now()
+    expires = now + timedelta(seconds=RESET_TOKEN_TTL_SECONDS)
+
+    conn = get_db_connection()
+    try:
+        cleanup_reset_tokens(conn, now)
+
+        # 记录请求流水用于频率限制，并清理一天前的旧记录
+        conn.execute(
+            "DELETE FROM password_reset_requests WHERE requested_at < ?",
+            (now_string(now - timedelta(days=1)),),
+        )
+        conn.execute(
+            "INSERT INTO password_reset_requests (user_id, requested_at) VALUES (?, ?)",
+            (user_id, now_string(now)),
+        )
+
+        # 每个用户只保留最新的若干个有效令牌
+        active = conn.execute(
+            "SELECT id FROM password_reset_tokens WHERE user_id = ? ORDER BY created_at DESC",
+            (user_id,),
+        ).fetchall()
+        for row in active[RESET_TOKEN_MAX_ACTIVE - 1 :]:
+            conn.execute(
+                "DELETE FROM password_reset_tokens WHERE id = ?", (row["id"],)
+            )
+
+        conn.execute(
+            "INSERT INTO password_reset_tokens (token_hash, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)",
+            (token_hash, user_id, now_string(now), now_string(expires)),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
     return token
 
 
-RESET_TOKENS = {}
+def get_reset_token(token):
+    """查询有效令牌，返回 (数据行, 错误信息)"""
+    if not isinstance(token, str) or not token.strip():
+        return None, "链接无效或已过期"
+
+    token_hash = hash_reset_token(token.strip())
+    conn = get_db_connection()
+    row = conn.execute(
+        "SELECT * FROM password_reset_tokens WHERE token_hash = ?", (token_hash,)
+    ).fetchone()
+    conn.close()
+
+    if not row or row["used_at"]:
+        return None, "链接无效或已过期"
+    if row["expires_at"] < now_string():
+        return None, "链接已过期"
+    return row, None
+
+
+def reset_password_with_token(token, new_password):
+    """
+    原子地消耗令牌并修改密码，同时递增 session_version 使旧会话失效。
+    返回 user_id，令牌无效时返回 None。
+    """
+    token_hash = hash_reset_token(token.strip())
+    now = now_string()
+
+    conn = get_db_connection()
+    try:
+        row = conn.execute(
+            "SELECT * FROM password_reset_tokens WHERE token_hash = ?", (token_hash,)
+        ).fetchone()
+        if not row or row["used_at"] or row["expires_at"] < now:
+            return None
+
+        cursor = conn.execute(
+            "UPDATE password_reset_tokens SET used_at = ? WHERE id = ? AND used_at IS NULL",
+            (now, row["id"]),
+        )
+        if cursor.rowcount != 1:
+            return None
+
+        conn.execute(
+            "UPDATE users SET password = ?, session_version = session_version + 1 WHERE id = ?",
+            (hash_password(new_password), row["user_id"]),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    return row["user_id"]
 
 
 @app.route("/forgot-password", methods=["GET"])
@@ -399,13 +599,9 @@ def reset_password_page(token):
     重置密码页面
     :param token: 重置令牌
     """
-    token_data = RESET_TOKENS.get(token)
-    if not token_data:
-        return render_template("reset_password.html", error="链接无效或已过期")
-
-    if datetime.now().timestamp() > token_data["expires"]:
-        del RESET_TOKENS[token]
-        return render_template("reset_password.html", error="链接已过期")
+    _token_data, error = get_reset_token(token)
+    if error:
+        return render_template("reset_password.html", error=error), 404
 
     return render_template("reset_password.html", token=token)
 
@@ -427,6 +623,10 @@ def forgot_password():
     conn.close()
 
     if not user:
+        return jsonify({"message": "如果邮箱存在，已发送重置链接"}), 200
+
+    if not reset_request_allowed(user["id"]):
+        logger.warning("密码重置请求过于频繁，已跳过发送（user_id=%s）", user["id"])
         return jsonify({"message": "如果邮箱存在，已发送重置链接"}), 200
 
     token = generate_reset_token(user["id"])
@@ -490,25 +690,13 @@ def reset_password():
     if error:
         return jsonify({"error": error}), 400
 
-    token_data = RESET_TOKENS.get(token)
-    if not token_data:
+    _token_data, error = get_reset_token(token)
+    if error:
+        return jsonify({"error": error}), 400
+
+    # 原子消耗令牌并修改密码，同时使该用户所有旧会话失效
+    if reset_password_with_token(token, new_password) is None:
         return jsonify({"error": "链接无效或已过期"}), 400
-
-    if datetime.now().timestamp() > token_data["expires"]:
-        del RESET_TOKENS[token]
-        return jsonify({"error": "链接已过期"}), 400
-
-    user_id = token_data["user_id"]
-    hashed_password = hash_password(new_password)
-
-    conn = get_db_connection()
-    conn.execute(
-        "UPDATE users SET password = ? WHERE id = ?", (hashed_password, user_id)
-    )
-    conn.commit()
-    conn.close()
-
-    del RESET_TOKENS[token]
 
     return jsonify({"message": "密码重置成功"})
 
@@ -627,144 +815,192 @@ def format_time_ago(created_at_str):
         return "未知"
 
 
-def send_reminder_emails():
+def build_reminder_email(user, todos, now=None):
+    """构建每日提醒邮件，所有用户输入均已转义"""
+    now = now or datetime.now()
+    todo_items_html = ""
+    for todo in todos:
+        created_at = todo["created_at"]
+        todo_items_html += f"""
+        <div class="todo-item">
+            <div class="todo-title">{html_escape(todo["title"])}</div>
+            <div class="todo-meta">
+                <span class="todo-date">创建于: {html_escape(str(created_at or ""))}</span>
+                <span class="time-ago">已过去: {format_time_ago(created_at)}</span>
+            </div>
+        </div>
+        """
+
+    reminder_time = user["reminder_time"] or 540
+    reminder_hour = reminder_time // 60
+    reminder_minute = reminder_time % 60
+
+    return f"""
+    <html>
+    <head>
+        <style>
+            body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
+            .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
+            .header {{ background: linear-gradient(135deg, #4A90D9 0%, #67B8DE 100%); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }}
+            .content {{ background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px; }}
+            .greeting {{ font-size: 24px; margin-bottom: 20px; }}
+            .todo-list {{ background: white; padding: 20px; border-radius: 8px; margin: 20px 0; }}
+            .todo-item {{ padding: 15px 0; border-bottom: 1px solid #eee; }}
+            .todo-item:last-child {{ border-bottom: none; }}
+            .todo-title {{ font-weight: 600; font-size: 16px; margin-bottom: 8px; }}
+            .todo-meta {{ font-size: 13px; color: #666; }}
+            .todo-date {{ margin-right: 15px; }}
+            .time-ago {{ color: #e74c3c; font-weight: 500; }}
+            .footer {{ text-align: center; color: #999; margin-top: 30px; font-size: 12px; }}
+            .notification-time {{ background: #fff3cd; padding: 10px; border-radius: 6px; margin-bottom: 20px; font-size: 14px; color: #856404; }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="header">
+                <h1>📋 待办事项提醒</h1>
+            </div>
+            <div class="content">
+                <p class="greeting">你好，{html_escape(user["username"])}！</p>
+                <div class="notification-time">
+                    ⏰ 当前时间: {now.strftime("%Y-%m-%d %H:%M")} | 每日提醒: {reminder_hour:02d}:{reminder_minute:02d}
+                </div>
+                <p>您共有 <strong>{len(todos)}</strong> 个待办事项未完成：</p>
+                <div class="todo-list">
+                    {todo_items_html}
+                </div>
+                <p style="margin-top: 20px;">点击 <a href="{BASE_URL}">这里</a> 查看和管理您的待办事项。</p>
+                <p style="color: #999; font-size: 12px;">可以在 <a href="{BASE_URL}/settings">设置页</a> 调整提醒时间或关闭每日提醒。</p>
+            </div>
+            <div class="footer">
+                <p>此邮件由系统自动发送，请勿回复。</p>
+            </div>
+        </div>
+    </body>
+    </html>
     """
-    发送邮件提醒
-    每天7:30-21:30每小时检查一次，通知用户未完成的待办事项
-    """
-    global REMINDER_SENT_TODAY
 
-    if not Config.MAIL_ENABLED:
-        return
 
-    logger.info("开始发送提醒邮件...")
-
-    conn = get_db_connection()
-    now = datetime.now()
-    current_date = now.strftime("%Y-%m-%d")
-    current_hour = now.hour
-    current_minute = now.minute
-
-    # 检查是否在通知时间范围内 (7:30-21:30)
-    # 7:30 开始，21:30 结束
-    is_before_start = current_hour < 7 or (current_hour == 7 and current_minute < 30)
-    is_after_end = current_hour > 21 or (current_hour == 21 and current_minute > 30)
-
-    if is_before_start or is_after_end:
-        logger.info(
-            f"当前时间 {current_hour}:{current_minute:02d} 不在通知时间范围内 (7:30-21:30)"
-        )
-        conn.close()
-        return
-
-    # 新的一天，重置发送记录
-    last_reset = REMINDER_SENT_TODAY.get("date", "")
-    if last_reset != current_date:
-        REMINDER_SENT_TODAY = {"date": current_date}
-        logger.info("新的一天，重置发送记录")
-
-    users = conn.execute(
-        "SELECT * FROM users WHERE email IS NOT NULL AND email != ''"
+def get_unfinished_todos(conn, user_id):
+    return conn.execute(
+        "SELECT * FROM todos WHERE user_id = ? AND completed = 0 ORDER BY created_at DESC",
+        (user_id,),
     ).fetchall()
 
-    sent_count = 0
 
-    for user in users:
-        user_id = user["id"]
-        sent_key = f"{current_date}_{user_id}_{current_hour}"
-        if REMINDER_SENT_TODAY.get(sent_key):
-            continue
+def send_reminder_for_user(conn, user, now=None):
+    """给单个用户发送未完成待办摘要，返回是否成功"""
+    if not user["email"]:
+        return False
+    todos = get_unfinished_todos(conn, user["id"])
+    if not todos:
+        return False
+    now = now or datetime.now()
+    html_content = build_reminder_email(user, todos, now)
+    return send_email(
+        user["email"],
+        f"待办事项提醒 - {now.strftime('%Y-%m-%d')}",
+        html_content,
+    )
 
-        # 获取未完成的待办事项
-        todos = conn.execute(
-            "SELECT * FROM todos WHERE user_id = ? AND completed = 0 ORDER BY created_at DESC",
-            (user["id"],),
+
+def send_scheduled_reminders():
+    """
+    按用户设置的 reminder_time 发送每日提醒。
+    通过 last_reminded_on 原子占位，保证每个用户每天最多一封（多进程安全）。
+    """
+    if not Config.MAIL_ENABLED:
+        return 0
+
+    now = datetime.now()
+    today = now.strftime("%Y-%m-%d")
+    current_minutes = now.hour * 60 + now.minute
+
+    conn = get_db_connection()
+    sent = 0
+    try:
+        candidates = conn.execute(
+            """
+            SELECT * FROM users
+            WHERE email IS NOT NULL AND email != ''
+              AND COALESCE(reminder_enabled, 1) = 1
+              AND COALESCE(last_reminded_on, '') != ?
+              AND CAST(COALESCE(reminder_time, 540) AS INTEGER) <= ?
+            """,
+            (today, current_minutes),
         ).fetchall()
 
-        if todos:
-            # 构建待办事项列表，包含创建时间和已过去时间
-            todo_items_html = ""
-            for todo in todos:
-                created_at = todo["created_at"]
-                time_ago = format_time_ago(created_at)
-                todo_items_html += f"""
-                <div class="todo-item">
-                    <div class="todo-title">{html_escape(todo["title"])}</div>
-                    <div class="todo-meta">
-                        <span class="todo-date">创建于: {html_escape(str(created_at or ""))}</span>
-                        <span class="time-ago">已过去: {time_ago}</span>
-                    </div>
-                </div>
-                """
-
-            html_content = f"""
-            <html>
-            <head>
-                <style>
-                    body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
-                    .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
-                    .header {{ background: linear-gradient(135deg, #4A90D9 0%, #67B8DE 100%); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }}
-                    .content {{ background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px; }}
-                    .greeting {{ font-size: 24px; margin-bottom: 20px; }}
-                    .todo-list {{ background: white; padding: 20px; border-radius: 8px; margin: 20px 0; }}
-                    .todo-item {{ padding: 15px 0; border-bottom: 1px solid #eee; }}
-                    .todo-item:last-child {{ border-bottom: none; }}
-                    .todo-title {{ font-weight: 600; font-size: 16px; margin-bottom: 8px; }}
-                    .todo-meta {{ font-size: 13px; color: #666; }}
-                    .todo-date {{ margin-right: 15px; }}
-                    .time-ago {{ color: #e74c3c; font-weight: 500; }}
-                    .footer {{ text-align: center; color: #999; margin-top: 30px; font-size: 12px; }}
-                    .notification-time {{ background: #fff3cd; padding: 10px; border-radius: 6px; margin-bottom: 20px; font-size: 14px; color: #856404; }}
-                </style>
-            </head>
-            <body>
-                <div class="container">
-                    <div class="header">
-                        <h1>📋 待办事项提醒</h1>
-                    </div>
-                    <div class="content">
-                        <p class="greeting">你好，{html_escape(user['username'])}！</p>
-                        <div class="notification-time">
-                            ⏰ 当前时间: {now.strftime("%Y-%m-%d %H:%M")} | 提醒时段: 07:00-23:00
-                        </div>
-                        <p>您共有 <strong>{len(todos)}</strong> 个待办事项未完成：</p>
-                        <div class="todo-list">
-                            {todo_items_html}
-                        </div>
-                        <p style="margin-top: 20px;">点击 <a href="{BASE_URL}">这里</a> 查看和管理您的待办事项。</p>
-                    </div>
-                    <div class="footer">
-                        <p>此邮件由系统自动发送，请勿回复。</p>
-                        <p>每日提醒时间: 07:00 - 23:00 (每小时检查一次)</p>
-                    </div>
-                </div>
-            </body>
-            </html>
-            """
-
-            send_email(
-                user["email"],
-                f"待办事项提醒 - {current_date} {current_hour}:00",
-                html_content,
+        for user in candidates:
+            # 先原子占位再发送，避免多进程或重启导致重复邮件
+            cursor = conn.execute(
+                "UPDATE users SET last_reminded_on = ? WHERE id = ? AND COALESCE(last_reminded_on, '') != ?",
+                (today, user["id"], today),
             )
-            sent_count += 1
-            REMINDER_SENT_TODAY[sent_key] = True
-            logger.info(
-                f"✓ 已发送邮件给用户 {user['username']} (提醒时间: {current_hour}:00)"
-            )
+            conn.commit()
+            if cursor.rowcount != 1:
+                continue
 
-    conn.close()
+            try:
+                if send_reminder_for_user(conn, user, now):
+                    sent += 1
+            except Exception:
+                logger.exception("发送提醒失败（user_id=%s）", user["id"])
+    finally:
+        conn.close()
 
-    if sent_count > 0:
-        logger.info(f"共发送 {sent_count} 封提醒邮件")
-    else:
-        logger.info("没有需要发送的提醒邮件")
+    if sent:
+        logger.info("已发送 %s 封每日提醒", sent)
+    return sent
+
+
+def send_manual_reminder(user):
+    """
+    手动立即发送一次提醒，带最小间隔限制。
+    返回 (是否成功, 提示信息, HTTP 状态码)
+    """
+    if not Config.MAIL_ENABLED:
+        return False, "邮件服务未启用", 400
+    if not user["email"]:
+        return False, "用户未设置邮箱", 400
+
+    now = datetime.now()
+    last = user["last_manual_reminder_at"]
+    if last:
+        try:
+            last_dt = datetime.strptime(last, "%Y-%m-%d %H:%M:%S")
+            if (now - last_dt).total_seconds() < MANUAL_REMINDER_INTERVAL_SECONDS:
+                return False, "操作过于频繁，请稍后再试", 429
+        except ValueError:
+            pass
+
+    conn = get_db_connection()
+    try:
+        todos = get_unfinished_todos(conn, user["id"])
+        if not todos:
+            return False, "没有未完成的待办事项", 200
+
+        html_content = build_reminder_email(user, todos, now)
+        if not send_email(
+            user["email"],
+            f"待办事项提醒 - {now.strftime('%Y-%m-%d')}",
+            html_content,
+        ):
+            return False, "邮件发送失败，请稍后重试", 500
+
+        conn.execute(
+            "UPDATE users SET last_manual_reminder_at = ? WHERE id = ?",
+            (now_string(now), user["id"]),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    return True, "提醒邮件已发送", 200
 
 
 def start_reminder_scheduler():
     """
-    启动邮件提醒定时任务
-    每隔1小时检查并发送邮件提醒
+    启动每日提醒调度器：每分钟检查一次，按用户的 reminder_time 发送。
     """
     global REMINDER_SCHEDULER_STARTED
     if REMINDER_SCHEDULER_STARTED:
@@ -773,30 +1009,15 @@ def start_reminder_scheduler():
     REMINDER_SCHEDULER_STARTED = True
 
     def scheduler():
+        logger.info("每日提醒调度器已启动（每分钟检查一次）")
         while True:
-            now = datetime.now()
-            current_minute = now.minute
-            current_second = now.second
-
-            # 计算距离下一个整点（北京时间）的秒数
-            # 如果现在是 10:15:30，距离 11:00:00 还有 (44 * 60 + 30) = 2670 秒
-            seconds_to_next_hour = (59 - current_minute) * 60 + (60 - current_second)
-
-            logger.info(
-                f"当前时间: {now.strftime('%H:%M:%S')}，距离下一个整点还有 {seconds_to_next_hour} 秒"
-            )
-
-            # 等待到下一个整点
-            time.sleep(seconds_to_next_hour)
-
-            # 到达整点，执行邮件发送
             try:
-                send_reminder_emails()
-            except Exception as e:
-                logger.error(f"定时任务执行失败: {e}")
+                send_scheduled_reminders()
+            except Exception:
+                logger.exception("提醒任务执行失败")
 
-            # 等待1分钟，避免在同一分钟内重复执行
-            time.sleep(60)
+            # 对齐到下一分钟，避免长期运行产生漂移
+            time.sleep(max(60 - datetime.now().second, 1))
 
     thread = threading.Thread(target=scheduler, daemon=True)
     thread.start()
@@ -947,6 +1168,7 @@ def login():
     session["user_id"] = user["id"]
     session["username"] = user["username"]
     session["is_admin"] = user["is_admin"]
+    session["session_version"] = user["session_version"]
 
     return jsonify(
         {
@@ -969,13 +1191,15 @@ def logout():
 def get_current_user():
     conn = get_db_connection()
     user = conn.execute(
-        "SELECT reminder_time FROM users WHERE id = ?", (session["user_id"],)
+        "SELECT email, reminder_time, reminder_enabled FROM users WHERE id = ?",
+        (session["user_id"],),
     ).fetchone()
     conn.close()
 
     reminder_time = (
         user["reminder_time"] if user and user["reminder_time"] is not None else 540
     )
+    reminder_enabled = bool(user["reminder_enabled"]) if user else True
     reminder_hour = reminder_time // 60
     reminder_minute = reminder_time % 60
 
@@ -983,8 +1207,10 @@ def get_current_user():
         {
             "id": session["user_id"],
             "username": session["username"],
+            "email": user["email"] if user else None,
             "is_admin": bool(session.get("is_admin", False)),
             "reminder_time": reminder_time,
+            "reminder_enabled": reminder_enabled,
             "reminder_hour": reminder_hour,
             "reminder_minute": reminder_minute,
         }
@@ -1000,37 +1226,53 @@ def update_reminder_time():
 
     reminder_hour = data.get("reminder_hour")
     reminder_minute = data.get("reminder_minute", 0)
+    reminder_enabled = data.get("reminder_enabled")
 
-    if reminder_hour is None:
-        return jsonify({"error": "请提供提醒时间"}), 400
+    if reminder_hour is None and reminder_enabled is None:
+        return jsonify({"error": "请提供提醒时间或开关状态"}), 400
 
-    try:
-        reminder_hour = int(reminder_hour)
-        reminder_minute = int(reminder_minute) if reminder_minute is not None else 0
+    updates = {}
+    if reminder_hour is not None:
+        try:
+            reminder_hour = int(reminder_hour)
+            reminder_minute = (
+                int(reminder_minute) if reminder_minute is not None else 0
+            )
+        except (ValueError, TypeError):
+            return jsonify({"error": "请提供有效的提醒时间"}), 400
 
         if reminder_hour < 0 or reminder_hour > 23:
             return jsonify({"error": "小时必须是0-23之间的整数"}), 400
         if reminder_minute < 0 or reminder_minute > 59:
             return jsonify({"error": "分钟必须是0-59之间的整数"}), 400
-    except (ValueError, TypeError):
-        return jsonify({"error": "请提供有效的提醒时间"}), 400
 
-    reminder_time = reminder_hour * 60 + reminder_minute
+        updates["reminder_time"] = reminder_hour * 60 + reminder_minute
+
+    if reminder_enabled is not None:
+        if not isinstance(reminder_enabled, bool):
+            return jsonify({"error": "reminder_enabled 必须是布尔值"}), 400
+        updates["reminder_enabled"] = 1 if reminder_enabled else 0
 
     conn = get_db_connection()
+    assignments = ", ".join(f"{field} = ?" for field in updates)
     conn.execute(
-        "UPDATE users SET reminder_time = ? WHERE id = ?",
-        (reminder_time, session["user_id"]),
+        f"UPDATE users SET {assignments} WHERE id = ?",
+        (*updates.values(), session["user_id"]),
     )
     conn.commit()
+    user = conn.execute(
+        "SELECT reminder_time, reminder_enabled FROM users WHERE id = ?",
+        (session["user_id"],),
+    ).fetchone()
     conn.close()
 
     return jsonify(
         {
-            "message": "提醒时间已更新",
-            "reminder_time": reminder_time,
-            "reminder_hour": reminder_hour,
-            "reminder_minute": reminder_minute,
+            "message": "提醒设置已更新",
+            "reminder_time": user["reminder_time"],
+            "reminder_hour": user["reminder_time"] // 60,
+            "reminder_minute": user["reminder_time"] % 60,
+            "reminder_enabled": bool(user["reminder_enabled"]),
         }
     )
 
@@ -1459,15 +1701,16 @@ def reset_user_password(user_id):
 
         hashed_password = hash_password(new_password)
         conn.execute(
-            "UPDATE users SET password = ? WHERE id = ?",
+            "UPDATE users SET password = ?, session_version = session_version + 1 WHERE id = ?",
             (hashed_password, user_id),
         )
         conn.commit()
         conn.close()
 
         return jsonify({"message": f"用户 {user['username']} 的密码已重置"})
-    except Exception as e:
+    except Exception:
         conn.close()
+        logger.exception("重置用户密码失败")
         return jsonify({"error": "重置密码失败"}), 500
 
 
@@ -1483,7 +1726,9 @@ def delete_user(user_id):
         if not user:
             return jsonify({"error": "用户不存在"}), 404
 
-        # 先删待办再删用户：兼容历史数据库（外键可能未启用级联）
+        # 先删关联数据再删用户：兼容历史数据库（外键可能未启用级联）
+        conn.execute("DELETE FROM password_reset_tokens WHERE user_id = ?", (user_id,))
+        conn.execute("DELETE FROM password_reset_requests WHERE user_id = ?", (user_id,))
         conn.execute("DELETE FROM todos WHERE user_id = ?", (user_id,))
         conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
         conn.commit()
@@ -1561,76 +1806,28 @@ def test_email():
 @app.route("/api/send-reminder-now", methods=["POST"])
 @login_required
 def send_reminder_now():
-    if not Config.MAIL_ENABLED:
-        return jsonify({"error": "邮件服务未启用"}), 400
-
     conn = get_db_connection()
     user = conn.execute(
         "SELECT * FROM users WHERE id = ?", (session["user_id"],)
     ).fetchone()
-
-    if not user or not user["email"]:
-        conn.close()
-        return jsonify({"error": "用户未设置邮箱"}), 400
-
-    now = datetime.now()
-    current_date = now.strftime("%Y-%m-%d")
-
-    todos = conn.execute(
-        "SELECT * FROM todos WHERE user_id = ? AND completed = 0 ORDER BY created_date DESC",
-        (user["id"],),
-    ).fetchall()
-
     conn.close()
 
-    if not todos:
-        return jsonify({"message": "没有未完成的待办事项"})
-
-    html_content = f"""
-    <html>
-    <head>
-        <style>
-            body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
-            .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
-            .header {{ background: linear-gradient(135deg, #4A90D9 0%, #67B8DE 100%); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }}
-            .content {{ background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px; }}
-            .greeting {{ font-size: 24px; margin-bottom: 20px; }}
-            .todo-list {{ background: white; padding: 20px; border-radius: 8px; margin: 20px 0; }}
-            .todo-item {{ padding: 10px 0; border-bottom: 1px solid #eee; }}
-            .todo-item:last-child {{ border-bottom: none; }}
-            .footer {{ text-align: center; color: #999; margin-top: 30px; font-size: 12px; }}
-        </style>
-    </head>
-    <body>
-        <div class="container">
-            <div class="header">
-                <h1>📋 待办事项提醒</h1>
-            </div>
-            <div class="content">
-                <p class="greeting">你好，{html_escape(user['username'])}！</p>
-                <p>今天是 {current_date}，你还有 <strong>{len(todos)}</strong> 个待办事项未完成：</p>
-                <div class="todo-list">
-                    {"".join([f'<div class="todo-item">{html_escape(todo["title"])}</div>' for todo in todos])}
-                </div>
-                <p style="margin-top: 20px;">点击 <a href="{BASE_URL}">这里</a> 查看和管理你的待办事项。</p>
-            </div>
-            <div class="footer">
-                <p>此邮件由系统自动发送，请勿回复。</p>
-            </div>
-        </div>
-    </body>
-    </html>
-    """
-
-    send_email(user["email"], f"待办事项提醒 - {current_date}", html_content)
-
-    return jsonify({"message": f"提醒邮件已发送到 {user['email']}"})
+    ok, message, status = send_manual_reminder(user)
+    if not ok:
+        return jsonify({"error": message}), status
+    return jsonify({"message": message})
 
 
 if __name__ == "__main__":
     init_db()
     validate_config(strict=False)
-    app.run(debug=True, host="0.0.0.0", port=5145)
+
+    debug = os.environ.get("FLASK_DEBUG", "1").lower() in ("1", "true")
+    # Werkzeug reloader 会启动父子两个进程，只在真正的工作进程里启动调度器
+    if not debug or os.environ.get("WERKZEUG_RUN_MAIN") == "true":
+        start_reminder_scheduler()
+
+    app.run(debug=debug, host="0.0.0.0", port=5145)
 
 
 # Gunicorn 启动钩子（在 Gunicorn 环境下启动定时任务）

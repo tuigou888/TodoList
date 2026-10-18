@@ -18,7 +18,16 @@ def get_db_connection():
     conn = sqlite3.connect(DB_NAME, timeout=10)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
+    conn.execute("PRAGMA busy_timeout = 10000")
     return conn
+
+
+def ensure_column(cursor, table, column, definition):
+    cursor.execute(f"PRAGMA table_info({table})")
+    columns = {row[1] for row in cursor.fetchall()}
+    if column not in columns:
+        cursor.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+        print(f"✓ 添加 {table}.{column} 字段")
 
 
 def migrate_database():
@@ -38,6 +47,10 @@ def migrate_database():
                 email TEXT,
                 is_admin INTEGER DEFAULT 0,
                 reminder_time INTEGER DEFAULT 540,
+                reminder_enabled INTEGER DEFAULT 1,
+                last_reminded_on DATE,
+                last_manual_reminder_at TIMESTAMP,
+                session_version INTEGER DEFAULT 0,
                 created_at TIMESTAMP DEFAULT (DATETIME('now', 'localtime')),
                 last_login_at TIMESTAMP
             )
@@ -57,34 +70,42 @@ def migrate_database():
             )
         """
         )
-
-        cursor.execute("PRAGMA table_info(users)")
-        columns = [column[1] for column in cursor.fetchall()]
-
-        if "is_admin" not in columns:
-            cursor.execute("ALTER TABLE users ADD COLUMN is_admin INTEGER DEFAULT 0")
-            print("✓ 添加 is_admin 字段")
-
-        if "last_login_at" not in columns:
-            cursor.execute("ALTER TABLE users ADD COLUMN last_login_at TIMESTAMP")
-            print("✓ 添加 last_login_at 字段")
-
-        if "reminder_time" not in columns:
-            cursor.execute(
-                "ALTER TABLE users ADD COLUMN reminder_time INTEGER DEFAULT 540"
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS password_reset_tokens (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                token_hash TEXT UNIQUE NOT NULL,
+                user_id INTEGER NOT NULL,
+                created_at TIMESTAMP NOT NULL,
+                expires_at TIMESTAMP NOT NULL,
+                used_at TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
             )
-            print("✓ 添加 reminder_time 字段")
+        """
+        )
 
-        cursor.execute("PRAGMA table_info(todos)")
-        todo_columns = [column[1] for column in cursor.fetchall()]
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS password_reset_requests (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                requested_at TIMESTAMP NOT NULL,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            )
+        """
+        )
 
-        if "user_id" not in todo_columns:
-            cursor.execute("ALTER TABLE todos ADD COLUMN user_id INTEGER")
-            print("✓ 添加 user_id 字段")
+        # 历史字段迁移
+        ensure_column(cursor, "users", "is_admin", "INTEGER DEFAULT 0")
+        ensure_column(cursor, "users", "last_login_at", "TIMESTAMP")
+        ensure_column(cursor, "users", "reminder_time", "INTEGER DEFAULT 540")
+        ensure_column(cursor, "users", "reminder_enabled", "INTEGER DEFAULT 1")
+        ensure_column(cursor, "users", "last_reminded_on", "DATE")
+        ensure_column(cursor, "users", "last_manual_reminder_at", "TIMESTAMP")
+        ensure_column(cursor, "users", "session_version", "INTEGER DEFAULT 0")
 
-        if "created_date" not in todo_columns:
-            cursor.execute("ALTER TABLE todos ADD COLUMN created_date DATE")
-            print("✓ 添加 created_date 字段")
+        ensure_column(cursor, "todos", "user_id", "INTEGER")
+        ensure_column(cursor, "todos", "created_date", "DATE")
 
         # 查询索引（与 app.init_db 保持一致）
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_todos_user_id ON todos(user_id)")
@@ -95,6 +116,15 @@ def migrate_database():
             "CREATE INDEX IF NOT EXISTS idx_todos_user_date ON todos(user_id, created_date)"
         )
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)")
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_prt_user_id ON password_reset_tokens(user_id)"
+        )
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_prt_expires ON password_reset_tokens(expires_at)"
+        )
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_prr_user_time ON password_reset_requests(user_id, requested_at)"
+        )
 
         conn.commit()
         print("✓ 数据库迁移完成")
