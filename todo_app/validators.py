@@ -138,6 +138,7 @@ def serialize_todo(todo):
         "tags": _parse_tags(todo["tags"]),
         "context": todo["context"],
         "is_mit": bool(todo["is_mit"]),
+        "mit_date": todo["mit_date"],
         "created_date": todo["created_date"],
         "created_at": todo["created_at"],
         "completed_at": todo["completed_at"],

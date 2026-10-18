@@ -1229,10 +1229,12 @@ def get_todo_stats():
                SUM(CASE WHEN completed = 0 THEN 1 ELSE 0 END) AS pending,
                SUM(CASE WHEN completed = 1 THEN 1 ELSE 0 END) AS completed,
                SUM(CASE WHEN completed = 0 AND due_date IS NOT NULL AND due_date < ? THEN 1 ELSE 0 END) AS overdue,
-               SUM(CASE WHEN created_date = ? THEN 1 ELSE 0 END) AS created_today
+               SUM(CASE WHEN created_date = ? THEN 1 ELSE 0 END) AS created_today,
+               SUM(CASE WHEN is_mit = 1 AND mit_date = ? AND completed = 0 THEN 1 ELSE 0 END) AS mit_pending,
+               SUM(CASE WHEN is_mit = 1 AND mit_date = ? AND completed = 1 THEN 1 ELSE 0 END) AS mit_completed
         FROM todos WHERE user_id = ? AND deleted_at IS NULL
         """,
-        (today, today, session["user_id"]),
+        (today, today, today, today, session["user_id"]),
     ).fetchone()
     conn.close()
 
@@ -1243,6 +1245,8 @@ def get_todo_stats():
             "completed": row["completed"] or 0,
             "overdue": row["overdue"] or 0,
             "created_today": row["created_today"] or 0,
+            "mit_pending": row["mit_pending"] or 0,
+            "mit_completed": row["mit_completed"] or 0,
         }
     )
 
@@ -1456,6 +1460,74 @@ def update_todo(todo_id):
     conn.close()
 
     return jsonify(serialize_todo(updated_todo))
+
+
+@app.route("/api/todos/mit", methods=["GET"])
+@login_required
+def get_mit_todos():
+    """今天的“三件最重要的事”"""
+    today = datetime.now().strftime("%Y-%m-%d")
+    conn = get_db_connection()
+    todos = conn.execute(
+        """
+        SELECT * FROM todos
+        WHERE user_id = ? AND is_mit = 1 AND mit_date = ? AND deleted_at IS NULL
+        ORDER BY completed ASC, priority DESC, created_at DESC
+        """,
+        (session["user_id"], today),
+    ).fetchall()
+    conn.close()
+    return jsonify([serialize_todo(todo) for todo in todos])
+
+
+@app.route("/api/todos/<int:todo_id>/mit", methods=["PUT"])
+@login_required
+def toggle_mit(todo_id):
+    """设置/取消今日三件事，每个用户每天最多 3 项"""
+    data = read_json_object()
+    if data is None:
+        return jsonify({"error": "请求必须是 JSON 对象"}), 400
+
+    is_mit = data.get("is_mit")
+    if not isinstance(is_mit, bool):
+        return jsonify({"error": "is_mit 必须是布尔值"}), 400
+
+    today = datetime.now().strftime("%Y-%m-%d")
+    conn = get_db_connection()
+    try:
+        todo = conn.execute(
+            "SELECT * FROM todos WHERE id = ? AND user_id = ? AND deleted_at IS NULL",
+            (todo_id, session["user_id"]),
+        ).fetchone()
+        if not todo:
+            return jsonify({"error": "待办事项不存在"}), 404
+
+        if is_mit:
+            already = todo["is_mit"] == 1 and todo["mit_date"] == today
+            if not already:
+                count = conn.execute(
+                    "SELECT COUNT(*) FROM todos WHERE user_id = ? AND is_mit = 1 AND mit_date = ? AND deleted_at IS NULL",
+                    (session["user_id"], today),
+                ).fetchone()[0]
+                if count >= 3:
+                    return jsonify({"error": "今日三件事最多选择 3 项"}), 400
+            conn.execute(
+                "UPDATE todos SET is_mit = 1, mit_date = ?, updated_at = ? WHERE id = ?",
+                (today, now_string(), todo_id),
+            )
+        else:
+            conn.execute(
+                "UPDATE todos SET is_mit = 0, mit_date = NULL, updated_at = ? WHERE id = ?",
+                (now_string(), todo_id),
+            )
+        conn.commit()
+        updated = conn.execute(
+            "SELECT * FROM todos WHERE id = ?", (todo_id,)
+        ).fetchone()
+    finally:
+        conn.close()
+
+    return jsonify(serialize_todo(updated))
 
 
 @app.route("/api/todos/<int:todo_id>", methods=["DELETE"])
