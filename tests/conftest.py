@@ -13,12 +13,13 @@ os.environ.setdefault("MAIL_ENABLED", "False")
 os.environ.setdefault("CORS_ENABLED", "True")
 
 import app as app_module  # noqa: E402
+from todo_app import db as app_db  # noqa: E402
 
 
 @pytest.fixture()
 def client(tmp_path, monkeypatch):
     db_path = str(tmp_path / "test.db")
-    monkeypatch.setattr(app_module, "DB_NAME", db_path)
+    monkeypatch.setattr(app_db, "DB_NAME", db_path)
     app_module.init_db()
     app_module.app.config.update(TESTING=True)
     with app_module.app.test_client() as test_client:

@@ -95,6 +95,10 @@ python migrate_db.py
 TodoList/
 ├── app.py                  # 路由、认证、令牌流程、提醒调度、Flask 配置
 ├── todo_app/
+│   ├── db.py               # 数据库连接、建表/迁移、时间工具
+│   ├── tokens.py           # 密码重置令牌
+│   ├── outbox.py           # 邮件队列与重试
+│   ├── scheduler.py        # 每日提醒与队列调度
 │   ├── validators.py       # 输入校验、JSON 解析、待办序列化
 │   ├── security.py         # 密码/令牌哈希
 │   ├── mailer.py           # SMTP 发送与邮件模板

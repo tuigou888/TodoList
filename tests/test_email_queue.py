@@ -1,13 +1,14 @@
 """邮件 outbox 队列、重试与管理接口测试。"""
 
 import app as app_module
+from todo_app import outbox
 
 
 def test_enqueue_and_process_success(client, monkeypatch):
     monkeypatch.setattr(app_module.Config, "MAIL_ENABLED", True)
     sent = []
     monkeypatch.setattr(
-        app_module,
+        outbox,
         "send_email",
         lambda to, subject, html: sent.append(to) or True,
     )
@@ -39,7 +40,7 @@ def test_enqueue_and_process_success(client, monkeypatch):
 
 def test_failed_email_retries_then_marks_failed(client, monkeypatch):
     monkeypatch.setattr(app_module.Config, "MAIL_ENABLED", True)
-    monkeypatch.setattr(app_module, "send_email", lambda *args: False)
+    monkeypatch.setattr(outbox, "send_email", lambda *args: False)
 
     app_module.enqueue_email("to@example.com", "主题", "<p>hi</p>")
 

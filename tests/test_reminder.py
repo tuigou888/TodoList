@@ -3,6 +3,7 @@
 import datetime as dt
 
 import app as app_module
+from todo_app import scheduler
 from todo_app.mailer import build_reminder_email
 
 
@@ -20,7 +21,7 @@ def test_scheduled_reminder_sends_once_per_day(auth_client, monkeypatch):
     auth_client.post("/api/todos", json={"title": "任务"})
     queued = []
     monkeypatch.setattr(
-        app_module,
+        scheduler,
         "enqueue_email",
         lambda to, subject, html, user_id=None: queued.append(to) or True,
     )
@@ -30,8 +31,8 @@ def test_scheduled_reminder_sends_once_per_day(auth_client, monkeypatch):
     _set_reminder_now(conn)
     conn.close()
 
-    assert app_module.send_scheduled_reminders() == 1
-    assert app_module.send_scheduled_reminders() == 0
+    assert scheduler.send_scheduled_reminders() == 1
+    assert scheduler.send_scheduled_reminders() == 0
     assert len(queued) == 1
 
 
@@ -39,7 +40,7 @@ def test_scheduled_reminder_respects_switch(auth_client, monkeypatch):
     auth_client.post("/api/todos", json={"title": "任务"})
     queued = []
     monkeypatch.setattr(
-        app_module,
+        scheduler,
         "enqueue_email",
         lambda to, subject, html, user_id=None: queued.append(to) or True,
     )
@@ -49,7 +50,7 @@ def test_scheduled_reminder_respects_switch(auth_client, monkeypatch):
     _set_reminder_now(conn, enabled=0)
     conn.close()
 
-    assert app_module.send_scheduled_reminders() == 0
+    assert scheduler.send_scheduled_reminders() == 0
     assert queued == []
 
 
@@ -57,7 +58,9 @@ def test_manual_reminder_is_rate_limited(auth_client, monkeypatch):
     auth_client.post("/api/todos", json={"title": "任务"})
     captured = []
     monkeypatch.setattr(
-        app_module, "send_email", lambda to, subject, html: captured.append(html) or True
+        scheduler,
+        "send_email",
+        lambda to, subject, html: captured.append(html) or True,
     )
     monkeypatch.setattr(app_module.Config, "MAIL_ENABLED", True)
 

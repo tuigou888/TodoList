@@ -27,11 +27,15 @@
 
 ## Architecture
 
-- **Entry**：`app.py` —— Flask 配置、认证装饰器、密码重置令牌、全部路由、提醒调度器。
+- **Entry**：`app.py` —— Flask 配置、认证装饰器、密码重置路由、待办/管理/设置路由。
 - **Shared modules**：`todo_app/`
+  - `db.py`：数据库连接、`init_db`、字段迁移、时间工具
   - `validators.py`：输入校验、JSON 请求解析、待办序列化
   - `security.py`：密码哈希（Werkzeug scrypt）、旧 SHA-256 校验与升级、令牌哈希
+  - `tokens.py`：密码重置令牌生成、校验、消耗与限频
   - `mailer.py`：SMTP 发送（SSL/STARTTLS、超时）与提醒邮件模板
+  - `outbox.py`：邮件 outbox 队列、退避重试与清理
+  - `scheduler.py`：每日提醒、手动提醒与邮件队列调度
   - `audit.py`：管理员操作审计日志
 - **DB**：SQLite，路径由 `DB_NAME` 环境变量决定（默认 `todos.db`）。WAL、外键开启、查询索引齐全；`init_db()` 幂等补字段。
 - **Templates**：`templates/` 共 7 个 HTML（index/login/register/admin/settings/forgot/reset）。内联 CSS/JS，无构建步骤。
@@ -54,7 +58,11 @@
 
 | Path                    | Role                                                       |
 | ----------------------- | ---------------------------------------------------------- |
-| `app.py`                | 路由、认证、令牌流程、提醒调度、Flask 配置                 |
+| `app.py`                | Flask 配置、认证、路由、登录限流                           |
+| `todo_app/db.py`        | 数据库连接、建表/迁移、时间工具                            |
+| `todo_app/tokens.py`    | 密码重置令牌                                               |
+| `todo_app/outbox.py`    | 邮件队列与重试                                             |
+| `todo_app/scheduler.py` | 每日提醒与邮件队列调度                                     |
 | `todo_app/validators.py`| 输入校验与待办序列化                                       |
 | `todo_app/security.py`  | 密码/令牌哈希                                              |
 | `todo_app/mailer.py`    | 邮件发送与邮件模板                                         |

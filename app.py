@@ -31,12 +31,8 @@ from flask_session import Session
 import csv
 import io
 import json
-import sqlite3
 from datetime import datetime, timedelta
 from functools import wraps
-import secrets
-import threading
-import time
 from html import escape as html_escape
 from dotenv import load_dotenv
 
@@ -45,7 +41,24 @@ load_dotenv()
 from config import Config
 
 from todo_app.audit import log_audit
-from todo_app.mailer import build_reminder_email, send_email
+from todo_app.db import get_db_connection, init_db, now_string
+from todo_app.mailer import send_email
+from todo_app.outbox import (
+    EMAIL_MAX_ATTEMPTS,
+    enqueue_email,
+    process_email_outbox,
+)
+from todo_app.scheduler import (
+    send_manual_reminder,
+    send_scheduled_reminders,
+    start_reminder_scheduler,
+)
+from todo_app.tokens import (
+    generate_reset_token,
+    get_reset_token,
+    reset_password_with_token,
+    reset_request_allowed,
+)
 from todo_app.security import (
     hash_password,
     hash_reset_token,
@@ -94,9 +107,6 @@ app.config["MAX_CONTENT_LENGTH"] = int(
 )
 Session(app)
 
-# 数据库文件名（Docker 部署可通过 DB_NAME 指向挂载目录）
-DB_NAME = os.environ.get("DB_NAME", "todos.db")
-
 # 站点的对外访问地址（用于邮件里的链接），生产环境必须配置
 BASE_URL = os.environ.get("BASE_URL", "http://localhost:5145").rstrip("/")
 
@@ -113,27 +123,11 @@ INSECURE_SECRET_KEYS = {
 # 请求体大小上限的友好提示
 MAX_CONTENT_LENGTH = app.config["MAX_CONTENT_LENGTH"]
 
-# 邮件提醒定时任务状态
-REMINDER_SCHEDULER_STARTED = False  # 定时任务是否已启动
-
-# 密码重置令牌配置
-RESET_TOKEN_TTL_SECONDS = 3600  # 令牌有效期：1 小时
-RESET_TOKEN_REQUEST_WINDOW_SECONDS = 300  # 频率统计窗口：5 分钟
-RESET_TOKEN_MAX_REQUESTS = 5  # 窗口内最多申请次数
-RESET_TOKEN_MAX_ACTIVE = 3  # 每个用户最多保留的有效令牌数
-
-# 手动触发提醒的最小间隔，避免被反复点击造成邮件轰炸
-MANUAL_REMINDER_INTERVAL_SECONDS = 60
-
 # 登录失败限流
 LOGIN_MAX_FAILURES = 5  # 窗口内允许的最大失败次数
 LOGIN_WINDOW_SECONDS = 900  # 统计窗口：15 分钟
 LOGIN_LOCK_SECONDS = 900  # 触发后的锁定时长：15 分钟
 
-# 邮件发送队列
-EMAIL_MAX_ATTEMPTS = 3
-EMAIL_RETRY_DELAYS = (60, 300, 900)  # 第 1/2/3 次重试的等待秒数
-EMAIL_OUTBOX_RETENTION_DAYS = 30
 
 
 def cors_response(response):
@@ -211,204 +205,10 @@ def handle_options():
     return cors_response(response)
 
 
-def get_db_connection():
-    """
-    获取数据库连接
-    返回一个支持字典式访问的 SQLite 连接对象
-    """
-    conn = sqlite3.connect(DB_NAME, timeout=10)
-    conn.row_factory = sqlite3.Row
-    # 每个连接都必须开启外键约束（SQLite 默认关闭）
-    conn.execute("PRAGMA foreign_keys = ON")
-    # 并发写入时等待锁释放，而不是立刻抛 database is locked
-    conn.execute("PRAGMA busy_timeout = 10000")
-    return conn
 
 
-def ensure_column(conn, table, column, definition):
-    """
-    为已有表补充缺失字段（幂等）。
-    table/column 均来自代码常量，不存在注入风险。
-    """
-    existing = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
-    if column not in existing:
-        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
-        logger.info("数据库迁移：%s 表新增字段 %s", table, column)
 
 
-def init_db():
-    """
-    初始化数据库
-    创建用户表和待办事项表（如果不存在），并创建查询索引
-    """
-    conn = get_db_connection()
-
-    # WAL 模式允许读写并发，避免多 worker 下频繁出现 database is locked
-    conn.execute("PRAGMA journal_mode = WAL")
-
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT UNIQUE NOT NULL,
-            password TEXT NOT NULL,
-            email TEXT,
-            is_admin INTEGER DEFAULT 0,
-            is_active INTEGER DEFAULT 1,
-            reminder_time INTEGER DEFAULT 540,
-            reminder_enabled INTEGER DEFAULT 1,
-            last_reminded_on DATE,
-            last_manual_reminder_at TIMESTAMP,
-            session_version INTEGER DEFAULT 0,
-            created_at TIMESTAMP DEFAULT (DATETIME('now', 'localtime')),
-            last_login_at TIMESTAMP
-        )
-    """
-    )
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS todos (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            title TEXT NOT NULL,
-            description TEXT,
-            completed INTEGER DEFAULT 0,
-            created_date DATE,
-            created_at TIMESTAMP,
-            due_date DATE,
-            priority INTEGER DEFAULT 2,
-            completed_at TIMESTAMP,
-            updated_at TIMESTAMP,
-            deleted_at TIMESTAMP,
-            user_id INTEGER NOT NULL,
-            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-        )
-    """
-    )
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS password_reset_tokens (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            token_hash TEXT UNIQUE NOT NULL,
-            user_id INTEGER NOT NULL,
-            created_at TIMESTAMP NOT NULL,
-            expires_at TIMESTAMP NOT NULL,
-            used_at TIMESTAMP,
-            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-        )
-    """
-    )
-
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS password_reset_requests (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL,
-            requested_at TIMESTAMP NOT NULL,
-            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-        )
-    """
-    )
-
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS audit_logs (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            actor_id INTEGER,
-            action TEXT NOT NULL,
-            target_type TEXT,
-            target_id INTEGER,
-            detail TEXT,
-            created_at TIMESTAMP NOT NULL
-        )
-    """
-    )
-
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS login_attempts (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT NOT NULL,
-            ip TEXT,
-            attempted_at TIMESTAMP NOT NULL,
-            success INTEGER NOT NULL DEFAULT 0
-        )
-    """
-    )
-
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS email_outbox (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER,
-            to_email TEXT NOT NULL,
-            subject TEXT NOT NULL,
-            html TEXT NOT NULL,
-            status TEXT NOT NULL DEFAULT 'pending',
-            attempts INTEGER NOT NULL DEFAULT 0,
-            next_attempt_at TIMESTAMP NOT NULL,
-            last_error TEXT,
-            created_at TIMESTAMP NOT NULL,
-            sent_at TIMESTAMP
-        )
-    """
-    )
-
-    # 老数据库补字段（幂等）
-    ensure_column(conn, "users", "is_admin", "INTEGER DEFAULT 0")
-    ensure_column(conn, "users", "is_active", "INTEGER DEFAULT 1")
-    ensure_column(conn, "users", "reminder_time", "INTEGER DEFAULT 540")
-    ensure_column(conn, "users", "last_login_at", "TIMESTAMP")
-    ensure_column(conn, "users", "reminder_enabled", "INTEGER DEFAULT 1")
-    ensure_column(conn, "users", "last_reminded_on", "DATE")
-    ensure_column(conn, "users", "last_manual_reminder_at", "TIMESTAMP")
-    ensure_column(conn, "users", "session_version", "INTEGER DEFAULT 0")
-    ensure_column(conn, "todos", "user_id", "INTEGER")
-    ensure_column(conn, "todos", "created_date", "DATE")
-    ensure_column(conn, "todos", "due_date", "DATE")
-    ensure_column(conn, "todos", "priority", "INTEGER DEFAULT 2")
-    ensure_column(conn, "todos", "completed_at", "TIMESTAMP")
-    ensure_column(conn, "todos", "updated_at", "TIMESTAMP")
-    ensure_column(conn, "todos", "deleted_at", "TIMESTAMP")
-
-    # 常用查询索引：按用户、完成状态、日期检索
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_todos_user_id ON todos(user_id)")
-    conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_todos_user_completed ON todos(user_id, completed)"
-    )
-    conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_todos_user_date ON todos(user_id, created_date)"
-    )
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)")
-    conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_prt_user_id ON password_reset_tokens(user_id)"
-    )
-    conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_prt_expires ON password_reset_tokens(expires_at)"
-    )
-    conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_prr_user_time ON password_reset_requests(user_id, requested_at)"
-    )
-    conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_todos_user_due ON todos(user_id, due_date)"
-    )
-    conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_todos_user_priority ON todos(user_id, priority)"
-    )
-    conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_todos_user_deleted ON todos(user_id, deleted_at)"
-    )
-    conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_logs(created_at)"
-    )
-    conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_login_attempts_user ON login_attempts(username, attempted_at)"
-    )
-    conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_email_outbox_status ON email_outbox(status, next_attempt_at)"
-    )
-
-    conn.commit()
-    conn.close()
 
 
 def validate_config(strict=None):
@@ -497,9 +297,6 @@ def admin_required(f):
     return decorated_function
 
 
-def now_string(moment=None):
-    """统一的时间字符串格式（本地时间，精确到秒）"""
-    return (moment or datetime.now()).strftime("%Y-%m-%d %H:%M:%S")
 
 
 def get_client_ip():
@@ -585,125 +382,14 @@ def login_lock_status(username):
     return True, remaining
 
 
-def cleanup_reset_tokens(conn, now=None):
-    """清理过期或已使用的令牌"""
-    conn.execute(
-        "DELETE FROM password_reset_tokens WHERE expires_at < ? OR used_at IS NOT NULL",
-        (now_string(now),),
-    )
 
 
-def reset_request_allowed(user_id):
-    """同一用户短时间内申请重置的次数限制，避免邮件轰炸"""
-    cutoff = now_string(
-        datetime.now() - timedelta(seconds=RESET_TOKEN_REQUEST_WINDOW_SECONDS)
-    )
-    conn = get_db_connection()
-    count = conn.execute(
-        "SELECT COUNT(*) FROM password_reset_requests WHERE user_id = ? AND requested_at >= ?",
-        (user_id, cutoff),
-    ).fetchone()[0]
-    conn.close()
-    return count < RESET_TOKEN_MAX_REQUESTS
 
 
-def generate_reset_token(user_id):
-    """
-    生成密码重置令牌并写入数据库。
-    :param user_id: 用户ID
-    :return: 明文令牌（只出现在邮件链接中）
-    """
-    token = secrets.token_urlsafe(32)
-    token_hash = hash_reset_token(token)
-    now = datetime.now()
-    expires = now + timedelta(seconds=RESET_TOKEN_TTL_SECONDS)
-
-    conn = get_db_connection()
-    try:
-        cleanup_reset_tokens(conn, now)
-
-        # 记录请求流水用于频率限制，并清理一天前的旧记录
-        conn.execute(
-            "DELETE FROM password_reset_requests WHERE requested_at < ?",
-            (now_string(now - timedelta(days=1)),),
-        )
-        conn.execute(
-            "INSERT INTO password_reset_requests (user_id, requested_at) VALUES (?, ?)",
-            (user_id, now_string(now)),
-        )
-
-        # 每个用户只保留最新的若干个有效令牌
-        active = conn.execute(
-            "SELECT id FROM password_reset_tokens WHERE user_id = ? ORDER BY created_at DESC",
-            (user_id,),
-        ).fetchall()
-        for row in active[RESET_TOKEN_MAX_ACTIVE - 1 :]:
-            conn.execute(
-                "DELETE FROM password_reset_tokens WHERE id = ?", (row["id"],)
-            )
-
-        conn.execute(
-            "INSERT INTO password_reset_tokens (token_hash, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)",
-            (token_hash, user_id, now_string(now), now_string(expires)),
-        )
-        conn.commit()
-    finally:
-        conn.close()
-
-    return token
 
 
-def get_reset_token(token):
-    """查询有效令牌，返回 (数据行, 错误信息)"""
-    if not isinstance(token, str) or not token.strip():
-        return None, "链接无效或已过期"
-
-    token_hash = hash_reset_token(token.strip())
-    conn = get_db_connection()
-    row = conn.execute(
-        "SELECT * FROM password_reset_tokens WHERE token_hash = ?", (token_hash,)
-    ).fetchone()
-    conn.close()
-
-    if not row or row["used_at"]:
-        return None, "链接无效或已过期"
-    if row["expires_at"] < now_string():
-        return None, "链接已过期"
-    return row, None
 
 
-def reset_password_with_token(token, new_password):
-    """
-    原子地消耗令牌并修改密码，同时递增 session_version 使旧会话失效。
-    返回 user_id，令牌无效时返回 None。
-    """
-    token_hash = hash_reset_token(token.strip())
-    now = now_string()
-
-    conn = get_db_connection()
-    try:
-        row = conn.execute(
-            "SELECT * FROM password_reset_tokens WHERE token_hash = ?", (token_hash,)
-        ).fetchone()
-        if not row or row["used_at"] or row["expires_at"] < now:
-            return None
-
-        cursor = conn.execute(
-            "UPDATE password_reset_tokens SET used_at = ? WHERE id = ? AND used_at IS NULL",
-            (now, row["id"]),
-        )
-        if cursor.rowcount != 1:
-            return None
-
-        conn.execute(
-            "UPDATE users SET password = ?, session_version = session_version + 1 WHERE id = ?",
-            (hash_password(new_password), row["user_id"]),
-        )
-        conn.commit()
-    finally:
-        conn.close()
-
-    return row["user_id"]
 
 
 @app.route("/forgot-password", methods=["GET"])
@@ -866,271 +552,24 @@ def handle_server_error(error):
     return "服务器内部错误", 500
 
 
-def enqueue_email(to_email, subject, html_content, user_id=None):
-    """把邮件写入发送队列，由调度器异步发送"""
-    now = now_string()
-    conn = get_db_connection()
-    try:
-        conn.execute(
-            """
-            INSERT INTO email_outbox
-                (user_id, to_email, subject, html, status, attempts, next_attempt_at, created_at)
-            VALUES (?, ?, ?, ?, 'pending', 0, ?, ?)
-            """,
-            (user_id, to_email, subject, html_content, now, now),
-        )
-        conn.commit()
-    except Exception:
-        logger.exception("邮件入队失败")
-        return False
-    finally:
-        conn.close()
-    return True
 
 
-def purge_email_outbox(days=EMAIL_OUTBOX_RETENTION_DAYS):
-    """清理超过保留期的已结束邮件"""
-    cutoff = now_string(datetime.now() - timedelta(days=days))
-    deleted = 0
-    conn = get_db_connection()
-    try:
-        cursor = conn.execute(
-            "DELETE FROM email_outbox WHERE status != 'pending' AND created_at < ?",
-            (cutoff,),
-        )
-        deleted = cursor.rowcount
-        conn.commit()
-    finally:
-        conn.close()
-    return deleted
 
 
-def process_email_outbox(limit=10):
-    """
-    处理到期的待发送邮件。
-    成功标记 sent；失败按退避间隔重试，达到上限后标记 failed。
-    """
-    if not Config.MAIL_ENABLED:
-        return 0
-
-    purge_email_outbox()
-
-    conn = get_db_connection()
-    try:
-        rows = conn.execute(
-            "SELECT * FROM email_outbox WHERE status = 'pending' AND next_attempt_at <= ? ORDER BY id ASC LIMIT ?",
-            (now_string(), limit),
-        ).fetchall()
-    finally:
-        conn.close()
-
-    processed = 0
-    for row in rows:
-        ok = send_email(row["to_email"], row["subject"], row["html"])
-        conn = get_db_connection()
-        try:
-            if ok:
-                conn.execute(
-                    "UPDATE email_outbox SET status = 'sent', attempts = attempts + 1, sent_at = ?, last_error = NULL WHERE id = ?",
-                    (now_string(), row["id"]),
-                )
-            else:
-                attempts = row["attempts"] + 1
-                if attempts >= EMAIL_MAX_ATTEMPTS:
-                    conn.execute(
-                        "UPDATE email_outbox SET status = 'failed', attempts = ?, last_error = ? WHERE id = ?",
-                        (attempts, "发送失败，已达最大重试次数", row["id"]),
-                    )
-                else:
-                    delay = EMAIL_RETRY_DELAYS[
-                        min(attempts - 1, len(EMAIL_RETRY_DELAYS) - 1)
-                    ]
-                    next_at = now_string(datetime.now() + timedelta(seconds=delay))
-                    conn.execute(
-                        "UPDATE email_outbox SET attempts = ?, next_attempt_at = ?, last_error = ? WHERE id = ?",
-                        (attempts, next_at, "SMTP 发送失败", row["id"]),
-                    )
-            conn.commit()
-        finally:
-            conn.close()
-        processed += 1
-
-    return processed
 
 
-LAST_DELETED_PURGE_DATE = None
 
 
-def purge_expired_deleted(days=30):
-    """每天清理一次回收站中超过保留期的待办"""
-    global LAST_DELETED_PURGE_DATE
-    today = datetime.now().strftime("%Y-%m-%d")
-    if LAST_DELETED_PURGE_DATE == today:
-        return 0
-    LAST_DELETED_PURGE_DATE = today
-
-    cutoff = now_string(datetime.now() - timedelta(days=days))
-    conn = get_db_connection()
-    cursor = conn.execute(
-        "DELETE FROM todos WHERE deleted_at IS NOT NULL AND deleted_at < ?",
-        (cutoff,),
-    )
-    conn.commit()
-    conn.close()
-    if cursor.rowcount:
-        logger.info("已清理 %s 条过期回收站待办", cursor.rowcount)
-    return cursor.rowcount
 
 
-def get_unfinished_todos(conn, user_id):
-    return conn.execute(
-        "SELECT * FROM todos WHERE user_id = ? AND completed = 0 AND deleted_at IS NULL ORDER BY created_at DESC",
-        (user_id,),
-    ).fetchall()
 
 
-def send_reminder_for_user(conn, user, now=None):
-    """给单个用户发送未完成待办摘要，返回是否成功"""
-    if not user["email"]:
-        return False
-    todos = get_unfinished_todos(conn, user["id"])
-    if not todos:
-        return False
-    now = now or datetime.now()
-    html_content = build_reminder_email(user, todos, now)
-    return enqueue_email(
-        user["email"],
-        f"待办事项提醒 - {now.strftime('%Y-%m-%d')}",
-        html_content,
-        user_id=user["id"],
-    )
 
 
-def send_scheduled_reminders():
-    """
-    按用户设置的 reminder_time 发送每日提醒。
-    通过 last_reminded_on 原子占位，保证每个用户每天最多一封（多进程安全）。
-    """
-    purge_expired_deleted()
-
-    if not Config.MAIL_ENABLED:
-        return 0
-
-    now = datetime.now()
-    today = now.strftime("%Y-%m-%d")
-    current_minutes = now.hour * 60 + now.minute
-
-    conn = get_db_connection()
-    sent = 0
-    try:
-        candidates = conn.execute(
-            """
-            SELECT * FROM users
-            WHERE email IS NOT NULL AND email != ''
-              AND COALESCE(reminder_enabled, 1) = 1
-              AND COALESCE(last_reminded_on, '') != ?
-              AND CAST(COALESCE(reminder_time, 540) AS INTEGER) <= ?
-            """,
-            (today, current_minutes),
-        ).fetchall()
-
-        for user in candidates:
-            # 先原子占位再发送，避免多进程或重启导致重复邮件
-            cursor = conn.execute(
-                "UPDATE users SET last_reminded_on = ? WHERE id = ? AND COALESCE(last_reminded_on, '') != ?",
-                (today, user["id"], today),
-            )
-            conn.commit()
-            if cursor.rowcount != 1:
-                continue
-
-            try:
-                if send_reminder_for_user(conn, user, now):
-                    sent += 1
-            except Exception:
-                logger.exception("发送提醒失败（user_id=%s）", user["id"])
-    finally:
-        conn.close()
-
-    if sent:
-        logger.info("已发送 %s 封每日提醒", sent)
-    return sent
 
 
-def send_manual_reminder(user):
-    """
-    手动立即发送一次提醒，带最小间隔限制。
-    返回 (是否成功, 提示信息, HTTP 状态码)
-    """
-    if not Config.MAIL_ENABLED:
-        return False, "邮件服务未启用", 400
-    if not user["email"]:
-        return False, "用户未设置邮箱", 400
-
-    now = datetime.now()
-    last = user["last_manual_reminder_at"]
-    if last:
-        try:
-            last_dt = datetime.strptime(last, "%Y-%m-%d %H:%M:%S")
-            if (now - last_dt).total_seconds() < MANUAL_REMINDER_INTERVAL_SECONDS:
-                return False, "操作过于频繁，请稍后再试", 429
-        except ValueError:
-            pass
-
-    conn = get_db_connection()
-    try:
-        todos = get_unfinished_todos(conn, user["id"])
-        if not todos:
-            return False, "没有未完成的待办事项", 200
-
-        html_content = build_reminder_email(user, todos, now)
-        if not send_email(
-            user["email"],
-            f"待办事项提醒 - {now.strftime('%Y-%m-%d')}",
-            html_content,
-        ):
-            return False, "邮件发送失败，请稍后重试", 500
-
-        conn.execute(
-            "UPDATE users SET last_manual_reminder_at = ? WHERE id = ?",
-            (now_string(now), user["id"]),
-        )
-        conn.commit()
-    finally:
-        conn.close()
-
-    return True, "提醒邮件已发送", 200
 
 
-def start_reminder_scheduler():
-    """
-    启动每日提醒调度器：每分钟检查一次，按用户的 reminder_time 发送。
-    """
-    global REMINDER_SCHEDULER_STARTED
-    if REMINDER_SCHEDULER_STARTED:
-        return
-
-    REMINDER_SCHEDULER_STARTED = True
-
-    def scheduler():
-        logger.info("每日提醒调度器已启动（每分钟检查一次）")
-        while True:
-            try:
-                send_scheduled_reminders()
-            except Exception:
-                logger.exception("提醒任务执行失败")
-
-            try:
-                process_email_outbox()
-            except Exception:
-                logger.exception("邮件队列处理失败")
-
-            # 对齐到下一分钟，避免长期运行产生漂移
-            time.sleep(max(60 - datetime.now().second, 1))
-
-    thread = threading.Thread(target=scheduler, daemon=True)
-    thread.start()
-    logger.info("邮件提醒定时任务已启动")
 
 
 @app.route("/login")
