@@ -26,8 +26,16 @@ class Config:
     MAIL_SERVER = os.environ.get("MAIL_SERVER", "smtp.qq.com")
     # SMTP 端口
     MAIL_PORT = int(os.environ.get("MAIL_PORT", 587))
-    # 是否使用 TLS 加密
+    # 是否使用 STARTTLS 加密（587 端口通常为 True）
     MAIL_USE_TLS = os.environ.get("MAIL_USE_TLS", "True").lower() in ["true", "1", "t"]
+    # 是否使用 SSL 直连（465 端口通常为 True）
+    MAIL_USE_SSL = os.environ.get("MAIL_USE_SSL", "False").lower() in [
+        "true",
+        "1",
+        "t",
+    ]
+    # 连接与读写超时（秒），避免邮件服务器无响应时阻塞请求线程
+    MAIL_TIMEOUT = int(os.environ.get("MAIL_TIMEOUT", 15))
     # 邮箱账号
     MAIL_USERNAME = os.environ.get("MAIL_USERNAME", "")
     # 邮箱密码/授权码
@@ -36,5 +44,9 @@ class Config:
     MAIL_DEFAULT_SENDER = os.environ.get("MAIL_DEFAULT_SENDER", "noreply@todoapp.com")
     # 是否启用邮件服务
     MAIL_ENABLED = os.environ.get("MAIL_ENABLED", "True").lower() in ["true", "1", "t"]
-    # 提醒时间（小时）
+    # 兼容旧配置：默认提醒小时（新版本按用户 reminder_time 发送）
     MAIL_REMINDER_HOUR = int(os.environ.get("MAIL_REMINDER_HOUR", 0))
+
+    # ==================== 站点配置 ====================
+    # 对外访问地址，用于邮件中的链接，例如 https://todo.example.com
+    BASE_URL = os.environ.get("BASE_URL", "http://localhost:5145").rstrip("/")

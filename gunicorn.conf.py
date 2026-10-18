@@ -51,8 +51,16 @@ def when_ready(server):
     logger.info("=" * 50)
     
     # 导入应用模块
-    from app import init_db, start_reminder_scheduler
-    
+    from app import init_db, start_reminder_scheduler, validate_config
+
+    # 配置校验失败时拒绝启动（例如 SECRET_KEY 使用默认值）
+    try:
+        validate_config(strict=True)
+        logger.info("✓ 配置校验通过")
+    except Exception as e:
+        logger.error(f"✗ 配置校验失败，拒绝启动: {e}")
+        sys.exit(1)
+
     # 初始化数据库
     try:
         init_db()
