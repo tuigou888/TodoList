@@ -129,11 +129,30 @@
         }
 
         .container {
-            max-width: 1200px;
+            max-width: 1320px;
             margin: 0 auto;
             padding: 30px;
             position: relative;
             z-index: 1;
+        }
+
+        @media (min-width: 1024px) {
+            .container {
+                display: grid;
+                grid-template-columns: 340px minmax(0, 1fr);
+                gap: 24px;
+                align-items: start;
+            }
+        }
+
+        .stat-cards {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 12px;
+        }
+
+        @media (max-width: 768px) {
+            .stat-cards { grid-template-columns: repeat(2, 1fr); }
         }
 
         .toolbar {
@@ -376,6 +395,25 @@
 
         .modal.show {
             display: flex;
+        }
+
+        /* Sidebar layout for admin (desktop) */
+        .admin-sidebar {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            position: sticky;
+            top: 20px;
+        }
+
+        .admin-main {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        @media (min-width: 1024px) {
+            .admin-sidebar { min-height: 80vh; }
         }
 
         .modal-content {
@@ -764,6 +802,25 @@
         .audit-time { color: var(--gray-400); font-size: 12px; white-space: nowrap; }
         .audit-empty { padding: 24px 0; text-align: center; color: var(--gray-400); font-size: 13px; }
 
+        @media (max-width: 1023px) {
+            .container {
+                display: block;
+                max-width: 1200px;
+            }
+            .admin-sidebar,
+            .admin-main { width: 100%; }
+        }
+
+        @media (max-width: 768px) {
+            .header { padding: 16px 20px; }
+            .header h1 { font-size: 18px; }
+            .user-info { flex-direction: column; align-items: flex-start; gap: 8px; }
+            .stat-cards { grid-template-columns: repeat(2, 1fr); }
+            .toolbar { flex-direction: column; align-items: stretch; }
+            .search-box { max-width: none; }
+            .btn-add, .btn-test-email { width: 100%; }
+        }
+
     </style>
     <link rel="manifest" href="/static/manifest.json">
     <meta name="theme-color" content="#C4664A">
@@ -785,107 +842,112 @@
     </div>
 
     <div class="container">
-        <div class="stat-cards">
-            <div class="stat-card">
-                <span class="stat-value" id="statUsers">-</span>
-                <span class="stat-label">用户总数</span>
+        <aside class="admin-sidebar">
+            <div class="stat-cards">
+                <div class="stat-card">
+                    <span class="stat-value" id="statUsers">-</span>
+                    <span class="stat-label">用户总数</span>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-value" id="statActive">-</span>
+                    <span class="stat-label">7 天活跃</span>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-value" id="statTodos">-</span>
+                    <span class="stat-label">待办总数</span>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-value" id="statPending">-</span>
+                    <span class="stat-label">未完成</span>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-value" id="statOverdue">-</span>
+                    <span class="stat-label">已逾期</span>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-value" id="statRate">-</span>
+                    <span class="stat-label">完成率</span>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-value" id="statEmailsPending">-</span>
+                    <span class="stat-label">待发邮件</span>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-value" id="statEmailsFailed">-</span>
+                    <span class="stat-label">失败邮件</span>
+                </div>
             </div>
-            <div class="stat-card">
-                <span class="stat-value" id="statActive">-</span>
-                <span class="stat-label">7 天活跃</span>
-            </div>
-            <div class="stat-card">
-                <span class="stat-value" id="statTodos">-</span>
-                <span class="stat-label">待办总数</span>
-            </div>
-            <div class="stat-card">
-                <span class="stat-value" id="statPending">-</span>
-                <span class="stat-label">未完成</span>
-            </div>
-            <div class="stat-card">
-                <span class="stat-value" id="statOverdue">-</span>
-                <span class="stat-label">已逾期</span>
-            </div>
-            <div class="stat-card">
-                <span class="stat-value" id="statRate">-</span>
-                <span class="stat-label">完成率</span>
-            </div>
-            <div class="stat-card">
-                <span class="stat-value" id="statEmailsPending">-</span>
-                <span class="stat-label">待发邮件</span>
-            </div>
-            <div class="stat-card">
-                <span class="stat-value" id="statEmailsFailed">-</span>
-                <span class="stat-label">失败邮件</span>
-            </div>
-        </div>
 
-        <div class="toolbar">
-            <div class="search-box">
-                <input type="text" id="searchInput" placeholder="搜索用户名或邮箱..." oninput="handleSearch()">
+            <div class="audit-card">
+                <div class="table-header">
+                    <h2>邮件队列</h2>
+                    <button class="btn-view" onclick="loadEmails()">刷新</button>
+                </div>
+                <div class="audit-list" id="emailList">
+                    <p class="audit-empty">加载中...</p>
+                </div>
             </div>
-            <button class="btn-add" onclick="openAddModal()">+ 添加用户</button>
-            <button class="btn-test-email" onclick="openTestEmailModal()">测试邮件</button>
-        </div>
 
-        <div class="users-table">
-            <div class="table-header">
-                <h2>用户列表</h2>
+            <div class="audit-card">
+                <div class="table-header">
+                    <h2>最近操作</h2>
+                </div>
+                <div class="audit-list" id="auditLogs">
+                    <p class="audit-empty">加载中...</p>
+                </div>
             </div>
-            <div class="table-container">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>ID</th>
-                            <th>用户名</th>
-                            <th>邮箱</th>
-                            <th>角色</th>
-                            <th>状态</th>
-                            <th>待办数量</th>
-                            <th>注册时间</th>
-                            <th>最后登录</th>
-                            <th>操作</th>
-                        </tr>
-                    </thead>
-                    <tbody id="usersTableBody">
-                        <tr>
-                            <td colspan="9">
-                                <div class="empty-state">
-                                    <div class="empty-state-icon">
-                                        <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                                            <circle cx="16" cy="14" r="5"/>
-                                            <path d="M6 34c0-5.5 4.5-10 10-10s10 4.5 10 10"/>
-                                            <circle cx="34" cy="18" r="4"/>
-                                            <path d="M28 34c0-3.3 2.7-6 6-6s6 2.7 6 6"/>
-                                        </svg>
+        </aside>
+
+        <main class="admin-main">
+            <div class="toolbar">
+                <div class="search-box">
+                    <input type="text" id="searchInput" placeholder="搜索用户名或邮箱..." oninput="handleSearch()">
+                </div>
+                <button class="btn-add" onclick="openAddModal()">+ 添加用户</button>
+                <button class="btn-test-email" onclick="openTestEmailModal()">测试邮件</button>
+            </div>
+
+            <div class="users-table">
+                <div class="table-header">
+                    <h2>用户列表</h2>
+                </div>
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>用户名</th>
+                                <th>邮箱</th>
+                                <th>角色</th>
+                                <th>状态</th>
+                                <th>待办数量</th>
+                                <th>注册时间</th>
+                                <th>最后登录</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="usersTableBody">
+                            <tr>
+                                <td colspan="9">
+                                    <div class="empty-state">
+                                        <div class="empty-state-icon">
+                                            <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                                                <circle cx="16" cy="14" r="5"/>
+                                                <path d="M6 34c0-5.5 4.5-10 10-10s10 4.5 10 10"/>
+                                                <circle cx="34" cy="18" r="4"/>
+                                                <path d="M28 38c0-3.3 2.7-6 6-6s6 2.7 6 6"/>
+                                            </svg>
+                                        </div>
+                                        <p>加载中...</p>
                                     </div>
-                                    <p>加载中...</p>
-                                </div>
-                            </td>
-                        </tr>
-                    </tbody>
-                </table>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="pagination" id="pagination"></div>
             </div>
-            <div class="pagination" id="pagination"></div>
-        </div>
-        <div class="audit-card">
-            <div class="table-header">
-                <h2>邮件队列</h2>
-                <button class="btn-view" onclick="loadEmails()">刷新</button>
-            </div>
-            <div class="audit-list" id="emailList">
-                <p class="audit-empty">加载中...</p>
-            </div>
-        </div>
-        <div class="audit-card">
-            <div class="table-header">
-                <h2>最近操作</h2>
-            </div>
-            <div class="audit-list" id="auditLogs">
-                <p class="audit-empty">加载中...</p>
-            </div>
-        </div>
-
+        </main>
     </div>
 
     <div class="modal" role="dialog" aria-modal="true" id="addModal">
