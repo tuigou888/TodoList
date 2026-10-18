@@ -76,6 +76,14 @@
 - [x] 邮件链接使用 `BASE_URL`
 - [x] 设置页可立即发送一次
 
+### 3.7 体验与可访问性
+
+- [x] PWA（manifest、service worker、可安装、应用壳离线）
+- [x] 深色模式（跟随系统偏好 + 手动切换，localStorage 记忆）
+- [x] 完成勾选支持键盘操作（role=checkbox / Enter / Space）
+- [x] modal 使用 role=dialog / aria-modal，关闭后归还焦点
+- [x] toast 使用 role=status / aria-live
+
 ### 3.6 安全与运维
 
 - [x] 参数化 SQL

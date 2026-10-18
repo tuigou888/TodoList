@@ -1,0 +1,89 @@
+/* 深色模式覆盖与全局小部件样式。
+   注意：这里不定义 :root 变量，避免覆盖各页面内联的浅色主题。 */
+
+:root {
+    color-scheme: light;
+}
+
+html.dark {
+    color-scheme: dark;
+    --cream: #151311;
+    --white: #211E1A;
+    --charcoal: #F2ECE3;
+    --terracotta: #E08A6C;
+    --terracotta-hover: #D07454;
+    --sage: #8FB58A;
+    --danger: #E5735C;
+    --gray-100: #2A2622;
+    --gray-200: #3A342E;
+    --gray-300: #4A423A;
+    --gray-400: #8A7F72;
+    --gray-500: #B0A596;
+    --gray-600: #C8BDAE;
+    --gray-700: #DED5C8;
+    --gray-800: #F0E9DF;
+    --shadow-sm: 0 1px 4px rgba(0, 0, 0, 0.3);
+    --shadow: 0 2px 12px rgba(0, 0, 0, 0.35);
+    --shadow-md: 0 4px 20px rgba(0, 0, 0, 0.4);
+    --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.45);
+}
+
+html.dark body::before {
+    opacity: 0.12;
+}
+
+html.dark img,
+html.dark svg {
+    color-scheme: dark;
+}
+
+.theme-toggle {
+    position: fixed;
+    right: 18px;
+    bottom: 18px;
+    z-index: 900;
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    border-radius: 50%;
+    border: 1px solid var(--gray-200, #E8E0D8);
+    background: var(--white, #FFFFFF);
+    color: var(--gray-700, #3D3530);
+    box-shadow: var(--shadow, 0 2px 12px rgba(42, 36, 32, 0.06));
+    cursor: pointer;
+    font-size: 18px;
+    line-height: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: inherit;
+}
+
+.theme-toggle:hover {
+    transform: translateY(-1px);
+}
+
+.theme-toggle:focus-visible {
+    outline: 3px solid rgba(196, 102, 74, 0.45);
+    outline-offset: 2px;
+}
+
+.checkbox {
+    padding: 0;
+    font: inherit;
+}
+
+@media (max-width: 480px) {
+    .theme-toggle {
+        right: 12px;
+        bottom: 12px;
+        width: 40px;
+        height: 40px;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .theme-toggle:hover {
+        transform: none;
+    }
+}

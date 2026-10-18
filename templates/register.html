@@ -398,6 +398,9 @@
             }
         }
     </style>
+    <link rel="manifest" href="/static/manifest.json">
+    <meta name="theme-color" content="#C4664A">
+    <link rel="stylesheet" href="/static/theme.css">
 </head>
 <body>
     <div class="deco-circle-1"></div>
@@ -481,7 +484,7 @@
         </div>
     </div>
 
-    <div class="toast" id="toast"></div>
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
     <script>
         let usernameCheckTimeout = null;
@@ -587,5 +590,6 @@
             }, 3000);
         }
     </script>
+    <script src="/static/theme.js" defer></script>
 </body>
 </html>

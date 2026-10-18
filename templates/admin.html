@@ -765,6 +765,9 @@
         .audit-empty { padding: 24px 0; text-align: center; color: var(--gray-400); font-size: 13px; }
 
     </style>
+    <link rel="manifest" href="/static/manifest.json">
+    <meta name="theme-color" content="#C4664A">
+    <link rel="stylesheet" href="/static/theme.css">
 </head>
 <body>
     <div class="header">
@@ -885,7 +888,7 @@
 
     </div>
 
-    <div class="modal" id="addModal">
+    <div class="modal" role="dialog" aria-modal="true" id="addModal">
         <div class="modal-content">
             <div class="modal-header">
                 <h2>添加用户</h2>
@@ -918,7 +921,7 @@
         </div>
     </div>
 
-    <div class="modal" id="viewModal">
+    <div class="modal" role="dialog" aria-modal="true" id="viewModal">
         <div class="modal-content">
             <div class="modal-header">
                 <h2>用户详情</h2>
@@ -928,7 +931,7 @@
         </div>
     </div>
 
-    <div class="modal" id="testEmailModal">
+    <div class="modal" role="dialog" aria-modal="true" id="testEmailModal">
         <div class="modal-content">
             <div class="modal-header">
                 <h2>测试邮件</h2>
@@ -947,7 +950,7 @@
         </div>
     </div>
 
-    <div class="modal" id="editUserModal">
+    <div class="modal" role="dialog" aria-modal="true" id="editUserModal">
         <div class="modal-content">
             <div class="modal-header">
                 <h2>编辑用户</h2>
@@ -983,7 +986,7 @@
         </div>
     </div>
 
-    <div class="toast" id="toast"></div>
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
     <script>
         let currentPage = 1;
@@ -1609,5 +1612,6 @@
 
         init();
     </script>
+    <script src="/static/theme.js" defer></script>
 </body>
 </html>

@@ -17,6 +17,9 @@
 - 管理后台：统计卡片、用户搜索/分页/添加/编辑/禁用/删除/重置密码、操作审计、测试邮件
 - 安全：参数化 SQL、HTML 转义、CSP/CORS 安全头、会话版本失效、请求体大小限制、旧密码哈希登录后自动升级
 - 健康检查 `/healthz`；Docker 中通过 `gosu` 以非 root 用户运行
+- PWA：manifest + service worker，可安装并离线打开应用壳
+- 深色模式：跟随系统偏好，也可手动切换
+- 无障碍：键盘可操作的完成勾选、modal 焦点管理、aria 标签
 - pytest 测试套件与 ruff 检查，GitHub Actions CI
 
 ## 技术栈

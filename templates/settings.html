@@ -254,6 +254,9 @@
             input[type="text"], input[type="email"], input[type="password"], input[type="time"] { width: 100%; }
         }
     </style>
+    <link rel="manifest" href="/static/manifest.json">
+    <meta name="theme-color" content="#C4664A">
+    <link rel="stylesheet" href="/static/theme.css">
 </head>
 <body>
     <div class="container">
@@ -329,7 +332,7 @@
         </section>
     </div>
 
-    <div class="toast" id="toast"></div>
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
     <script>
         const pad = (value) => String(value).padStart(2, '0');
@@ -495,5 +498,6 @@
 
         init();
     </script>
+    <script src="/static/theme.js" defer></script>
 </body>
 </html>

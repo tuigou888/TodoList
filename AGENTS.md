@@ -41,6 +41,7 @@
 - **Templates**：`templates/` 共 7 个 HTML（index/login/register/admin/settings/forgot/reset）。内联 CSS/JS，无构建步骤。
 - **Session**：Flask-Session 文件存储；`users.session_version` 用于在改密、重置密码、禁用、退出所有设备后使旧会话立即失效。
 - **Reminder**：后台 daemon 线程，每分钟检查；按用户 `reminder_time` 每天最多一封，`last_reminded_on` 在数据库层原子占位，多 worker 安全。
+- **PWA/Theme**：`static/manifest.json`、`static/sw.js`、`static/theme.css`、`static/theme.js`；深色模式通过 `html.dark` 覆盖 CSS 变量，所有页面在 `</head>`/`</body>` 接入。
 - **Timezone**：Docker 设置 `TZ=Asia/Shanghai`；Windows 本地遵循系统时区（`os.environ["TZ"]` 在 Windows 不生效）。
 
 ## Key Quirks
@@ -71,6 +72,7 @@
 | `gunicorn.conf.py`      | 生产服务器配置 + 启动钩子                                  |
 | `migrate_db.py`         | 独立迁移脚本（手工运行）                                   |
 | `templates/`            | 7 个页面模板                                               |
+| `static/`               | PWA manifest、service worker、图标、主题 CSS/JS            |
 | `tests/`                | pytest 测试套件                                            |
 | `pyproject.toml`        | pytest / ruff 配置                                         |
 | `requirements-dev.txt`  | 测试与 lint 依赖                                           |

@@ -804,6 +804,9 @@
         .btn-purge:hover { background: #F8D5C8; }
 
     </style>
+    <link rel="manifest" href="/static/manifest.json">
+    <meta name="theme-color" content="#C4664A">
+    <link rel="stylesheet" href="/static/theme.css">
 </head>
 <body>
     <div class="deco-circle-1"></div>
@@ -940,10 +943,10 @@
         </div>
     </div>
 
-    <div class="modal" id="editModal">
+    <div class="modal" id="editModal" role="dialog" aria-modal="true" aria-labelledby="editModalTitle">
         <div class="modal-content">
             <div class="modal-header">
-                <h2>编辑待办</h2>
+                <h2 id="editModalTitle">编辑待办</h2>
                 <button class="btn-close" onclick="closeEditModal()">&times;</button>
             </div>
             <form id="editForm" onsubmit="saveEdit(event)">
@@ -977,7 +980,7 @@
         </div>
     </div>
 
-    <div class="toast" id="toast"></div>
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
     <script>
         function localDateString(date = new Date()) {
@@ -992,6 +995,7 @@
         let currentTodos = [];
         let searchTimer = null;
         const selectedIds = new Set();
+        let lastFocusedElement = null;
 
         function applyViewMode() {
             document.getElementById('btnToday').classList.toggle('active', viewMode === 'today');
@@ -1264,7 +1268,7 @@
             container.innerHTML = todos.map(todo => `
                 <div class="todo-item priority-item-${todo.priority || 2} ${todo.completed ? 'completed' : ''}" data-id="${todo.id}">
                     <input type="checkbox" class="select-box" data-id="${todo.id}" ${selectedIds.has(todo.id) ? 'checked' : ''} onchange="toggleSelect(${todo.id}, this.checked)" aria-label="选择待办">
-                    ${isTrash ? '' : `<div class="checkbox ${todo.completed ? 'checked' : ''}" onclick="toggleTodo(${todo.id}, ${!todo.completed})"></div>`}
+                    ${isTrash ? '' : `<button type="button" class="checkbox ${todo.completed ? 'checked' : ''}" role="checkbox" aria-checked="${todo.completed}" aria-label="标记完成" onclick="toggleTodo(${todo.id}, ${!todo.completed})" onkeydown="handleCheckboxKey(event, ${todo.id}, ${!todo.completed})"></button>`}
                     <div class="todo-content">
                         <div class="todo-title">${escapeHtml(todo.title)}</div>
                         ${todo.description ? `<div class="todo-description">${escapeHtml(todo.description)}</div>` : ''}
@@ -1402,6 +1406,7 @@
         }
 
         function openEditModal(id) {
+            lastFocusedElement = document.activeElement;
             const todo = currentTodos.find(item => item.id === id);
             if (!todo) {
                 return;
@@ -1418,6 +1423,10 @@
 
         function closeEditModal() {
             document.getElementById('editModal').classList.remove('show');
+            if (lastFocusedElement && typeof lastFocusedElement.focus === 'function') {
+                lastFocusedElement.focus();
+                lastFocusedElement = null;
+            }
         }
 
         async function saveEdit(event) {
@@ -1455,6 +1464,13 @@
                 showToast('保存失败，请稍后重试', 'error');
             } finally {
                 saveBtn.disabled = false;
+            }
+        }
+
+        function handleCheckboxKey(event, id, completed) {
+            if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                toggleTodo(id, completed);
             }
         }
 
@@ -1566,5 +1582,6 @@
 
         init();
     </script>
+    <script src="/static/theme.js" defer></script>
 </body>
 </html>
