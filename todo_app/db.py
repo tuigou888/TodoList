@@ -164,6 +164,57 @@ def init_db():
     """
     )
 
+    # 权限系统表
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS roles (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT UNIQUE NOT NULL,
+            description TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS permissions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT UNIQUE NOT NULL,
+            description TEXT,
+            resource TEXT,
+            action TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS role_permissions (
+            role_id INTEGER NOT NULL,
+            permission_id INTEGER NOT NULL,
+            PRIMARY KEY (role_id, permission_id),
+            FOREIGN KEY (role_id) REFERENCES roles(id) ON DELETE CASCADE,
+            FOREIGN KEY (permission_id) REFERENCES permissions(id) ON DELETE CASCADE
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS permission_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            permission TEXT NOT NULL,
+            action TEXT,
+            resource TEXT,
+            success INTEGER DEFAULT 1,
+            ip_address TEXT,
+            user_agent TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        )
+    """)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_perm_logs_user ON permission_logs(user_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_perm_logs_created ON permission_logs(created_at DESC)")
+
+    # 迁移现有用户到角色系统
+    ensure_column(conn, "users", "role_id", "INTEGER DEFAULT 1")
+    ensure_column(conn, "users", "custom_permissions", "TEXT")
+    conn.execute("UPDATE users SET role_id = 1 WHERE is_admin = 1 AND role_id IS NULL")
+    conn.execute("UPDATE users SET role_id = 3 WHERE is_admin = 0 AND role_id IS NULL")
+
     # 老数据库补字段（幂等）
     ensure_column(conn, "users", "is_admin", "INTEGER DEFAULT 0")
     ensure_column(conn, "users", "is_active", "INTEGER DEFAULT 1")
@@ -192,6 +243,13 @@ def init_db():
     ensure_column(conn, "todos", "completed_at", "TIMESTAMP")
     ensure_column(conn, "todos", "updated_at", "TIMESTAMP")
     ensure_column(conn, "todos", "deleted_at", "TIMESTAMP")
+    ensure_column(conn, "todos", "context", "TEXT")
+    ensure_column(conn, "todos", "is_mit", "INTEGER DEFAULT 0")
+    ensure_column(conn, "todos", "mit_date", "DATE")
+
+    # 初始化权限数据
+    from todo_app.permissions import init_permissions_table
+    init_permissions_table(conn)
 
     # 常用查询索引：按用户、完成状态、日期检索
     conn.execute("CREATE INDEX IF NOT EXISTS idx_todos_user_id ON todos(user_id)")

@@ -44,6 +44,13 @@ from config import Config
 
 from todo_app.audit import log_audit
 from todo_app.db import get_db_connection, init_db, now_string
+from todo_app.permissions import (
+    get_user_permissions,
+    check_permission_required,
+    check_permissions_required,
+    get_all_roles,
+    get_role_permissions,
+)
 from todo_app.mailer import build_daily_review_email, send_email
 from todo_app.outbox import (
     EMAIL_MAX_ATTEMPTS,
@@ -285,12 +292,53 @@ def login_required(f):
     return decorated_function
 
 
+def check_permission_required(permission):
+    """
+    检查指定权限的装饰器
+    用法: @check_permission_required('users.view')
+    """
+    def decorator(f):
+        @wraps(f)
+        def decorated_function(*args, **kwargs):
+            user_id = session.get("user_id")
+            if not user_id:
+                return jsonify({"error": "请先登录"}), 401
+
+            conn = get_db_connection()
+            user = conn.execute(
+                "SELECT session_version, is_active, is_admin FROM users WHERE id = ?",
+                (user_id,),
+            ).fetchone()
+            conn.close()
+
+            if (
+                not user
+                or user["is_active"] == 0
+                or user["session_version"] != session.get("session_version", 0)
+            ):
+                session.clear()
+                return jsonify({"error": "登录状态已失效，请重新登录"}), 401
+
+            if user["is_admin"] == 1:
+                return f(*args, **kwargs)
+
+            # 获取用户权限
+            conn = get_db_connection()
+            permissions = get_user_permissions(conn, user_id)
+            conn.close()
+
+            if permission not in permissions:
+                return jsonify({"error": "权限不足"}), 403
+
+            return f(*args, **kwargs)
+        return decorated_function
+    return decorator
+
+
 def admin_required(f):
     """
-    管理员装饰器
-    用于保护需要管理员权限才能访问的路由
+    管理员装饰器（向后兼容）
     """
-
     @wraps(f)
     def decorated_function(*args, **kwargs):
         user_id = session.get("user_id")
@@ -299,7 +347,7 @@ def admin_required(f):
 
         conn = get_db_connection()
         user = conn.execute(
-            "SELECT is_admin, session_version, is_active FROM users WHERE id = ?",
+            "SELECT session_version, is_active, is_admin FROM users WHERE id = ?",
             (user_id,),
         ).fetchone()
         conn.close()
@@ -316,10 +364,7 @@ def admin_required(f):
             return jsonify({"error": "需要管理员权限"}), 403
 
         return f(*args, **kwargs)
-
     return decorated_function
-
-
 
 
 def get_client_ip():
@@ -756,12 +801,19 @@ def login():
     session["is_admin"] = user["is_admin"]
     session["session_version"] = user["session_version"]
 
+    # 获取用户权限
+    conn = get_db_connection()
+    permissions = get_user_permissions(conn, user["id"])
+    conn.close()
+
     return jsonify(
         {
             "id": user["id"],
             "username": user["username"],
             "email": user["email"],
             "is_admin": bool(user["is_admin"]),
+            "permissions": permissions,
+            "role": "admin" if user["is_admin"] else "user",
         }
     )
 
@@ -811,7 +863,31 @@ def get_current_user():
     )
 
 
+@app.route("/api/permissions", methods=["GET"])
+@login_required
+def get_permissions():
+    """获取当前用户的权限列表"""
+    conn = get_db_connection()
+    permissions = get_user_permissions(conn, session["user_id"])
+    conn.close()
+
+    return jsonify({
+        "permissions": permissions,
+        "role": "admin" if session.get("is_admin") else "user"
+    })
+
+
+@app.route("/api/roles", methods=["GET"])
+@login_required
+@check_permission_required('users.view')
+def get_roles():
+    """获取所有角色定义（需权限）"""
+    roles = get_all_roles()
+    return jsonify(roles)
+
+
 @app.route("/api/me/reminder", methods=["PUT"])
+@check_permission_required('settings.edit')
 @login_required
 def update_reminder_time():
     data = read_json_object()
@@ -1921,7 +1997,7 @@ def admin_page():
 
 
 @app.route("/api/admin/stats", methods=["GET"])
-@admin_required
+@check_permission_required('users.manage')
 def admin_stats():
     """管理后台概览数据"""
     now = datetime.now()
