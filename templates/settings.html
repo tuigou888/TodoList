@@ -56,13 +56,19 @@
         }
 
         .container {
-            max-width: 720px;
+            max-width: 1100px;
             margin: 0 auto;
             position: relative;
             z-index: 1;
-            display: flex;
-            flex-direction: column;
-            gap: 18px;
+        }
+
+        @media (min-width: 900px) {
+            .container {
+                display: grid;
+                grid-template-columns: 260px minmax(0, 1fr);
+                gap: 24px;
+                align-items: start;
+            }
         }
 
         .page-header {
@@ -70,14 +76,19 @@
             justify-content: space-between;
             align-items: flex-start;
             gap: 16px;
-            margin-bottom: 4px;
+            margin-bottom: 8px;
+            padding-top: 8px;
+        }
+
+        @media (min-width: 900px) {
+            .page-header { grid-column: 1 / -1; }
         }
 
         .page-header h1 {
             font-family: 'Noto Serif SC', serif;
             font-size: 26px;
             color: var(--gray-800);
-            margin-bottom: 6px;
+            margin-bottom: 4px;
         }
 
         .subtitle {
@@ -107,7 +118,69 @@
             border: 1px solid rgba(212,200,188,0.4);
             border-radius: var(--radius-xl);
             box-shadow: var(--shadow);
-            padding: 24px 26px;
+            padding: 22px 24px;
+        }
+
+        /* Sidebar nav */
+        .settings-sidebar {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            position: sticky;
+            top: 20px;
+        }
+
+        .settings-nav {
+            background: var(--white);
+            border-radius: var(--radius-xl);
+            border: 1px solid rgba(212,200,188,0.4);
+            box-shadow: var(--shadow);
+            padding: 10px;
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+
+        .nav-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 14px;
+            border-radius: var(--radius-md);
+            text-decoration: none;
+            color: var(--gray-600);
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.15s;
+            cursor: pointer;
+            border: none;
+            background: none;
+            width: 100%;
+            text-align: left;
+            font-family: 'Noto Sans SC', sans-serif;
+        }
+
+        .nav-item:hover { background: var(--gray-100); color: var(--gray-800); }
+        .nav-item.active { background: rgba(196,102,74,0.1); color: var(--terracotta); }
+        .nav-item svg { flex-shrink: 0; opacity: 0.7; }
+
+        .settings-main {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .settings-section { display: none; }
+        .settings-section.active { display: block; animation: fadeIn 0.2s ease; }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(6px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        @media (max-width: 899px) {
+            .settings-sidebar { display: none; }
+            .settings-section { display: block !important; }
         }
 
         .card h2 {
@@ -269,11 +342,12 @@
 
         @media (max-width: 520px) {
             body { padding: 14px; }
-            .card { padding: 20px; }
+            .card { padding: 18px; }
             .page-header { flex-direction: column; }
             .page-header h1 { font-size: 22px; }
             .row { align-items: stretch; }
             input[type="text"], input[type="email"], input[type="password"], input[type="time"] { width: 100%; }
+            .form-grid { max-width: none; }
         }
     </style>
     <link rel="manifest" href="/static/manifest.json">
@@ -285,112 +359,154 @@
         <header class="page-header">
             <div>
                 <h1>账户设置</h1>
-                <p class="subtitle">管理你的账号、邮箱与每日提醒</p>
+                <p class="subtitle">管理你的账号、权限与通知</p>
             </div>
             <a class="btn-ghost" href="/">← 返回首页</a>
         </header>
 
-        <section class="card">
-            <h2>基本信息</h2>
-            <div class="info-grid">
-                <div class="info-item">
-                    <span class="label">用户名</span>
-                    <span class="value" id="username">-</span>
-                </div>
-                <div class="info-item">
-                    <span class="label">邮箱</span>
-                    <span class="value" id="email">-</span>
-                </div>
-                <div class="info-item">
-                    <span class="label">角色</span>
-                    <span class="value" id="role">-</span>
-                </div>
-            </div>
-        </section>
+        <aside class="settings-sidebar">
+            <nav class="settings-nav" role="navigation" aria-label="设置导航">
+                <button class="nav-item active" data-target="section-account" onclick="switchSection(this)">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                    账户信息
+                </button>
+                <button class="nav-item" data-target="section-notifications" onclick="switchSection(this)">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+                    提醒与回顾
+                </button>
+                <button class="nav-item" data-target="section-security" onclick="switchSection(this)">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                    安全设置
+                </button>
+                <button class="nav-item" data-target="section-integrations" onclick="switchSection(this)">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                    集成与工具
+                </button>
+                <button class="nav-item" data-target="section-devices" onclick="switchSection(this)">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+                    登录设备
+                </button>
+            </nav>
+        </aside>
 
-        <section class="card">
-            <h2>每日提醒</h2>
-            <form id="reminderForm" onsubmit="saveReminder(event)">
-                <label class="switch-row">
-                    <input type="checkbox" id="reminderEnabled">
-                    <span>启用每日提醒邮件</span>
-                </label>
-                <div class="row">
-                    <label for="reminderTime">提醒时间</label>
-                    <input type="time" id="reminderTime" value="09:00">
-                    <button type="submit" class="btn-primary" id="saveReminderBtn">保存设置</button>
-                    <button type="button" class="btn-secondary" id="sendNowBtn" onclick="sendReminderNow()">立即发送一次</button>
+        <main class="settings-main">
+            <!-- 账户信息 -->
+            <section class="settings-section active" id="section-account">
+                <div class="card">
+                    <h2>基本信息</h2>
+                    <div class="info-grid">
+                        <div class="info-item">
+                            <span class="label">用户名</span>
+                            <span class="value" id="username">-</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="label">邮箱</span>
+                            <span class="value" id="email">-</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="label">角色</span>
+                            <span class="value" id="role">-</span>
+                        </div>
+                    </div>
                 </div>
-            </form>
-        </section>
+            </section>
 
-        <section class="card">
-            <h2>每日回顾</h2>
-            <form id="reviewForm" onsubmit="saveReview(event)">
-                <label class="switch-row">
-                    <input type="checkbox" id="reviewEnabled">
-                    <span>启用每日回顾邮件</span>
-                </label>
-                <div class="row">
-                    <label for="reviewTime">回顾时间</label>
-                    <input type="time" id="reviewTime" value="20:00">
-                    <button type="submit" class="btn-primary" id="saveReviewBtn">保存设置</button>
-                    <button type="button" class="btn-secondary" id="sendReviewBtn" onclick="sendReviewNow()">立即发送回顾</button>
+            <!-- 提醒与回顾 -->
+            <section class="settings-section" id="section-notifications">
+                <div class="card">
+                    <h2>每日提醒</h2>
+                    <form id="reminderForm" onsubmit="saveReminder(event)">
+                        <label class="switch-row">
+                            <input type="checkbox" id="reminderEnabled">
+                            <span>启用每日提醒邮件</span>
+                        </label>
+                        <div class="row">
+                            <label for="reminderTime">提醒时间</label>
+                            <input type="time" id="reminderTime" value="09:00">
+                            <button type="submit" class="btn-primary" id="saveReminderBtn">保存设置</button>
+                            <button type="button" class="btn-secondary" id="sendNowBtn" onclick="sendReminderNow()">立即发送一次</button>
+                        </div>
+                    </form>
                 </div>
-                <p class="hint" style="margin-top: 12px; margin-bottom: 0;">每日回顾包含完成/未完成/逾期与今日三件事；每周一还会发送周报。</p>
-            </form>
-        </section>
 
-        <section class="card">
-            <h2>修改密码</h2>
-            <form id="passwordForm" class="form-grid" onsubmit="changePassword(event)">
-                <input type="password" id="currentPassword" placeholder="当前密码" autocomplete="current-password" required>
-                <input type="password" id="newPassword" placeholder="新密码（至少6位）" autocomplete="new-password" minlength="6" required>
-                <input type="password" id="confirmPassword" placeholder="确认新密码" autocomplete="new-password" minlength="6" required>
-                <div>
-                    <button type="submit" class="btn-primary" id="changePasswordBtn">修改密码</button>
+                <div class="card">
+                    <h2>每日回顾</h2>
+                    <form id="reviewForm" onsubmit="saveReview(event)">
+                        <label class="switch-row">
+                            <input type="checkbox" id="reviewEnabled">
+                            <span>启用每日回顾邮件</span>
+                        </label>
+                        <div class="row">
+                            <label for="reviewTime">回顾时间</label>
+                            <input type="time" id="reviewTime" value="20:00">
+                            <button type="submit" class="btn-primary" id="saveReviewBtn">保存设置</button>
+                            <button type="button" class="btn-secondary" id="sendReviewBtn" onclick="sendReviewNow()">立即发送回顾</button>
+                        </div>
+                        <p class="hint" style="margin-top: 12px; margin-bottom: 0;">每日回顾包含完成/未完成/逾期与今日三件事；每周一还会发送周报。</p>
+                    </form>
                 </div>
-            </form>
-        </section>
+            </section>
 
-        <section class="card">
-            <h2>修改邮箱</h2>
-            <form id="emailForm" class="form-grid" onsubmit="changeEmail(event)">
-                <input type="email" id="newEmail" placeholder="新邮箱地址" autocomplete="email" required>
-                <input type="password" id="emailPassword" placeholder="当前密码" autocomplete="current-password" required>
-                <div>
-                    <button type="submit" class="btn-primary" id="changeEmailBtn">更新邮箱</button>
+            <!-- 安全设置 -->
+            <section class="settings-section" id="section-security">
+                <div class="card">
+                    <h2>修改密码</h2>
+                    <form id="passwordForm" class="form-grid" onsubmit="changePassword(event)">
+                        <input type="password" id="currentPassword" placeholder="当前密码" autocomplete="current-password" required>
+                        <input type="password" id="newPassword" placeholder="新密码（至少6位）" autocomplete="new-password" minlength="6" required>
+                        <input type="password" id="confirmPassword" placeholder="确认新密码" autocomplete="new-password" minlength="6" required>
+                        <div>
+                            <button type="submit" class="btn-primary" id="changePasswordBtn">修改密码</button>
+                        </div>
+                    </form>
                 </div>
-            </form>
-        </section>
 
-        <section class="card">
-            <h2>快速捕获</h2>
-            <p class="hint">生成 API 令牌后，可用 <code>/capture</code> 书签或 iOS 快捷指令快速添加任务。令牌只显示一次。</p>
-            <div class="row">
-                <button type="button" class="btn-primary" id="createTokenBtn" onclick="createApiToken()">生成令牌</button>
-                <button type="button" class="btn-secondary" id="revokeTokenBtn" onclick="revokeApiToken()">撤销令牌</button>
-            </div>
-            <div class="token-result" id="tokenResult" style="display: none;"></div>
-            <p class="hint" id="tokenStatus" style="margin-top: 12px; margin-bottom: 0;">检查中...</p>
-        </section>
+                <div class="card">
+                    <h2>修改邮箱</h2>
+                    <form id="emailForm" class="form-grid" onsubmit="changeEmail(event)">
+                        <input type="email" id="newEmail" placeholder="新邮箱地址" autocomplete="email" required>
+                        <input type="password" id="emailPassword" placeholder="当前密码" autocomplete="current-password" required>
+                        <div>
+                            <button type="submit" class="btn-primary" id="changeEmailBtn">更新邮箱</button>
+                        </div>
+                    </form>
+                </div>
+            </section>
 
-        <section class="card">
-            <h2>日历订阅</h2>
-            <p class="hint">把有截止日期的待办同步到 Google/Apple/Outlook 日历（只读）。链接含令牌，请勿公开分享。</p>
-            <div class="row">
-                <button type="button" class="btn-primary" id="createIcsBtn" onclick="createIcsToken()">生成订阅链接</button>
-                <button type="button" class="btn-secondary" id="revokeIcsBtn" onclick="revokeIcsToken()">撤销链接</button>
-            </div>
-            <div class="token-result" id="icsResult" style="display: none;"></div>
-            <p class="hint" id="icsStatus" style="margin-top: 12px; margin-bottom: 0;">检查中...</p>
-        </section>
+            <!-- 集成与工具 -->
+            <section class="settings-section" id="section-integrations">
+                <div class="card">
+                    <h2>快速捕获</h2>
+                    <p class="hint">生成 API 令牌后，可用 <code>/capture</code> 书签或 iOS 快捷指令快速添加任务。令牌只显示一次。</p>
+                    <div class="row">
+                        <button type="button" class="btn-primary" id="createTokenBtn" onclick="createApiToken()">生成令牌</button>
+                        <button type="button" class="btn-secondary" id="revokeTokenBtn" onclick="revokeApiToken()">撤销令牌</button>
+                    </div>
+                    <div class="token-result" id="tokenResult" style="display: none;"></div>
+                    <p class="hint" id="tokenStatus" style="margin-top: 12px; margin-bottom: 0;">检查中...</p>
+                </div>
 
-        <section class="card danger-zone">
-            <h2>登录设备</h2>
-            <p class="hint">退出后，所有设备（包括当前浏览器）上的登录状态都会失效，需要重新登录。</p>
-            <button type="button" class="btn-danger" id="logoutAllBtn" onclick="logoutAll()">退出所有设备</button>
-        </section>
+                <div class="card">
+                    <h2>日历订阅</h2>
+                    <p class="hint">把有截止日期的待办同步到 Google/Apple/Outlook 日历（只读）。链接含令牌，请勿公开分享。</p>
+                    <div class="row">
+                        <button type="button" class="btn-primary" id="createIcsBtn" onclick="createIcsToken()">生成订阅链接</button>
+                        <button type="button" class="btn-secondary" id="revokeIcsBtn" onclick="revokeIcsToken()">撤销链接</button>
+                    </div>
+                    <div class="token-result" id="icsResult" style="display: none;"></div>
+                    <p class="hint" id="icsStatus" style="margin-top: 12px; margin-bottom: 0;">检查中...</p>
+                </div>
+            </section>
+
+            <!-- 登录设备 -->
+            <section class="settings-section" id="section-devices">
+                <div class="card danger-zone">
+                    <h2>登录设备</h2>
+                    <p class="hint">退出后，所有设备（包括当前浏览器）上的登录状态都会失效，需要重新登录。</p>
+                    <button type="button" class="btn-danger" id="logoutAllBtn" onclick="logoutAll()">退出所有设备</button>
+                </div>
+            </section>
+        </main>
     </div>
 
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
@@ -720,6 +836,15 @@
         }
 
         init();
+
+        function switchSection(btn) {
+            const target = btn.dataset.target;
+            document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+            btn.classList.add('active');
+            document.querySelectorAll('.settings-section').forEach(s => s.classList.remove('active'));
+            const section = document.getElementById(target);
+            if (section) section.classList.add('active');
+        }
     </script>
     <script src="/static/theme.js" defer></script>
 </body>
