@@ -727,6 +727,20 @@
         }
         .btn-toggle:hover { background: var(--gray-500); }
 
+        .btn-unlock {
+            background: var(--terracotta);
+            color: white;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 12px;
+            cursor: pointer;
+            transition: all 0.2s;
+            margin-right: 8px;
+            font-family: 'Noto Sans SC', sans-serif;
+        }
+        .btn-unlock:hover { background: var(--terracotta-hover); }
+
         .audit-card {
             background: var(--white);
             border-radius: var(--radius-lg);
@@ -1099,6 +1113,7 @@
                         <button class="btn-edit-user" onclick="openEditUserModal(${user.id})">编辑</button>
                         <button class="btn-reset" onclick="resetPassword(${user.id})">重置密码</button>
                         <button class="btn-toggle" onclick="toggleActive(${user.id}, ${user.is_active})">${user.is_active ? '禁用' : '启用'}</button>
+                        ${user.locked ? '<button class="btn-unlock" onclick="unlockUser(' + user.id + ')">解锁</button>' : ''}
                         <button class="btn-delete" onclick="deleteUser(${user.id})">删除</button>
                     </td>
                 </tr>
@@ -1304,6 +1319,29 @@
                 }
             } catch (error) {
                 showToast(`${action}失败，请稍后重试`, 'error');
+            }
+        }
+
+        async function unlockUser(userId) {
+            if (!confirm('确定要解除该用户的登录锁定吗？')) {
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/admin/users/${userId}/unlock`, {
+                    method: 'POST'
+                });
+                const result = await response.json();
+
+                if (response.ok) {
+                    showToast(result.message || '已解除锁定', 'success');
+                    loadUsers();
+                    loadAuditLogs();
+                } else {
+                    showToast(result.error || '解锁失败', 'error');
+                }
+            } catch (error) {
+                showToast('解锁失败，请稍后重试', 'error');
             }
         }
 

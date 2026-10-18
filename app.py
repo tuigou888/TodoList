@@ -113,6 +113,11 @@ RESET_TOKEN_MAX_ACTIVE = 3  # 每个用户最多保留的有效令牌数
 # 手动触发提醒的最小间隔，避免被反复点击造成邮件轰炸
 MANUAL_REMINDER_INTERVAL_SECONDS = 60
 
+# 登录失败限流
+LOGIN_MAX_FAILURES = 5  # 窗口内允许的最大失败次数
+LOGIN_WINDOW_SECONDS = 900  # 统计窗口：15 分钟
+LOGIN_LOCK_SECONDS = 900  # 触发后的锁定时长：15 分钟
+
 
 def cors_response(response):
     """
@@ -300,6 +305,18 @@ def init_db():
     """
     )
 
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS login_attempts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT NOT NULL,
+            ip TEXT,
+            attempted_at TIMESTAMP NOT NULL,
+            success INTEGER NOT NULL DEFAULT 0
+        )
+    """
+    )
+
     # 老数据库补字段（幂等）
     ensure_column(conn, "users", "is_admin", "INTEGER DEFAULT 0")
     ensure_column(conn, "users", "is_active", "INTEGER DEFAULT 1")
@@ -342,6 +359,9 @@ def init_db():
     )
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_logs(created_at)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_login_attempts_user ON login_attempts(username, attempted_at)"
     )
 
     conn.commit()
@@ -437,6 +457,89 @@ def admin_required(f):
 def now_string(moment=None):
     """统一的时间字符串格式（本地时间，精确到秒）"""
     return (moment or datetime.now()).strftime("%Y-%m-%d %H:%M:%S")
+
+
+def get_client_ip():
+    """获取客户端 IP，兼容反向代理"""
+    forwarded = request.headers.get("X-Forwarded-For", "")
+    if forwarded:
+        return forwarded.split(",")[0].strip()[:64]
+    return (request.remote_addr or "")[:64]
+
+
+def record_login_attempt(username, success):
+    """
+    记录一次登录尝试；失败次数达到阈值时写审计日志。
+    成功登录会清除该用户的历史失败记录。
+    """
+    conn = get_db_connection()
+    try:
+        conn.execute(
+            "INSERT INTO login_attempts (username, ip, attempted_at, success) VALUES (?, ?, ?, ?)",
+            (username, get_client_ip(), now_string(), 1 if success else 0),
+        )
+        # 只保留一天的记录
+        conn.execute(
+            "DELETE FROM login_attempts WHERE attempted_at < ?",
+            (now_string(datetime.now() - timedelta(days=1)),),
+        )
+
+        if success:
+            conn.execute(
+                "DELETE FROM login_attempts WHERE username = ? AND success = 0",
+                (username,),
+            )
+        else:
+            cutoff = now_string(
+                datetime.now() - timedelta(seconds=LOGIN_WINDOW_SECONDS)
+            )
+            failures = conn.execute(
+                "SELECT COUNT(*) FROM login_attempts WHERE username = ? AND success = 0 AND attempted_at >= ?",
+                (username, cutoff),
+            ).fetchone()[0]
+            if failures == LOGIN_MAX_FAILURES:
+                log_audit(
+                    conn,
+                    None,
+                    "login_locked",
+                    "user",
+                    None,
+                    detail=f"用户名 {username} 连续登录失败 {failures} 次",
+                )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def login_lock_status(username):
+    """
+    返回 (是否锁定, 剩余秒数)。
+    统计窗口内失败次数达到阈值后，从最后一次失败起锁定 LOGIN_LOCK_SECONDS 秒。
+    """
+    cutoff = now_string(datetime.now() - timedelta(seconds=LOGIN_WINDOW_SECONDS))
+    conn = get_db_connection()
+    try:
+        row = conn.execute(
+            "SELECT COUNT(*) AS failures, MAX(attempted_at) AS last_failure FROM login_attempts WHERE username = ? AND success = 0 AND attempted_at >= ?",
+            (username, cutoff),
+        ).fetchone()
+    finally:
+        conn.close()
+
+    if not row or row["failures"] < LOGIN_MAX_FAILURES or not row["last_failure"]:
+        return False, 0
+
+    last_failure = datetime.strptime(row["last_failure"], "%Y-%m-%d %H:%M:%S")
+    remaining = int(
+        (
+            last_failure
+            + timedelta(seconds=LOGIN_LOCK_SECONDS)
+            - datetime.now()
+        ).total_seconds()
+    )
+    if remaining <= 0:
+        return False, 0
+    return True, remaining
 
 
 def cleanup_reset_tokens(conn, now=None):
@@ -971,6 +1074,13 @@ def login():
     if not username or not password:
         return jsonify({"error": "用户名和密码不能为空"}), 400
 
+    locked, remaining = login_lock_status(username)
+    if locked:
+        minutes = max(1, (remaining + 59) // 60)
+        response = jsonify({"error": f"尝试次数过多，请在 {minutes} 分钟后重试"})
+        response.headers["Retry-After"] = str(max(1, remaining))
+        return response, 429
+
     conn = get_db_connection()
     user = conn.execute(
         "SELECT * FROM users WHERE username = ?", (username,)
@@ -978,16 +1088,20 @@ def login():
 
     if not user:
         conn.close()
+        record_login_attempt(username, False)
+        return jsonify({"error": "用户名或密码错误"}), 401
+
+    matched, needs_rehash = verify_password(user["password"], password)
+    if not matched:
+        conn.close()
+        record_login_attempt(username, False)
         return jsonify({"error": "用户名或密码错误"}), 401
 
     if user["is_active"] == 0:
         conn.close()
         return jsonify({"error": "账户已被禁用，请联系管理员"}), 403
 
-    matched, needs_rehash = verify_password(user["password"], password)
-    if not matched:
-        conn.close()
-        return jsonify({"error": "用户名或密码错误"}), 401
+    record_login_attempt(username, True)
 
     # 历史 SHA-256 哈希在用户登录成功后自动升级为 Werkzeug 哈希
     if needs_rehash:
@@ -1634,6 +1748,13 @@ def get_users():
         count_params.extend([f"%{search}%", f"%{search}%"])
 
     total = conn.execute(count_query, count_params).fetchone()[0]
+
+    cutoff = now_string(datetime.now() - timedelta(seconds=LOGIN_WINDOW_SECONDS))
+    locked_rows = conn.execute(
+        "SELECT username, COUNT(*) AS failures FROM login_attempts WHERE success = 0 AND attempted_at >= ? GROUP BY username HAVING COUNT(*) >= ?",
+        (cutoff, LOGIN_MAX_FAILURES),
+    ).fetchall()
+    locked_usernames = {row["username"] for row in locked_rows}
     conn.close()
 
     result = []
@@ -1645,6 +1766,7 @@ def get_users():
                 "email": user["email"],
                 "is_admin": bool(user["is_admin"]),
                 "is_active": bool(user["is_active"]),
+                "locked": user["username"] in locked_usernames,
                 "created_at": user["created_at"],
                 "last_login_at": user["last_login_at"],
                 "todo_count": user["todo_count"],
@@ -1797,6 +1919,30 @@ def reset_user_password(user_id):
         conn.close()
         logger.exception("重置用户密码失败")
         return jsonify({"error": "重置密码失败"}), 500
+
+
+@app.route("/api/admin/users/<int:user_id>/unlock", methods=["POST"])
+@admin_required
+def unlock_user(user_id):
+    """清除用户近期的登录失败记录，解除锁定"""
+    conn = get_db_connection()
+    try:
+        user = conn.execute(
+            "SELECT username FROM users WHERE id = ?", (user_id,)
+        ).fetchone()
+        if not user:
+            return jsonify({"error": "用户不存在"}), 404
+
+        conn.execute(
+            "DELETE FROM login_attempts WHERE username = ? AND success = 0",
+            (user["username"],),
+        )
+        log_audit(conn, session["user_id"], "unlock_user", "user", user_id)
+        conn.commit()
+    finally:
+        conn.close()
+
+    return jsonify({"message": "已解除登录锁定"})
 
 
 @app.route("/api/admin/users/<int:user_id>", methods=["PUT"])
