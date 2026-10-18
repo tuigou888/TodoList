@@ -42,7 +42,7 @@
         });
 
         if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.register('/static/sw.js').catch(function () {
+            navigator.serviceWorker.register('/sw.js').catch(function () {
                 // PWA 注册失败不影响页面使用
             });
         }

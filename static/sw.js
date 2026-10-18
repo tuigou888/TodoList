@@ -1,10 +1,12 @@
 /* 应用壳缓存：静态资源网络优先、失败回退缓存；API 不缓存 */
-var CACHE_NAME = 'todo-shell-v1';
+var CACHE_NAME = 'todo-shell-v2';
 var SHELL = [
     '/login',
     '/static/theme.css',
     '/static/theme.js',
     '/static/icon.svg',
+    '/static/icon-192.png',
+    '/static/icon-512.png',
     '/static/manifest.json'
 ];
 

@@ -32,9 +32,26 @@ html.dark body::before {
     opacity: 0.12;
 }
 
+html.dark .admin-header {
+    background: #241F1B;
+}
+
 html.dark img,
 html.dark svg {
     color-scheme: dark;
+}
+
+.admin-badge,
+.status-badge {
+    white-space: nowrap;
+}
+
+.users-table td:last-child {
+    white-space: nowrap;
+}
+
+.users-table th {
+    white-space: nowrap;
 }
 
 .theme-toggle {

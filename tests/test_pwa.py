@@ -8,11 +8,20 @@ def test_static_assets_are_served(client):
         ("/static/theme.js", "javascript"),
         ("/static/sw.js", "javascript"),
         ("/static/icon.svg", "svg"),
+        ("/static/icon-192.png", "png"),
+        ("/static/icon-512.png", "png"),
     ]
     for path, content_type in assets:
         response = client.get(path)
         assert response.status_code == 200, path
         assert content_type in response.headers["Content-Type"], path
+
+
+def test_service_worker_root_route(client):
+    response = client.get("/sw.js")
+    assert response.status_code == 200
+    assert "javascript" in response.headers["Content-Type"]
+    assert response.headers["Service-Worker-Allowed"] == "/"
 
 
 def test_login_page_has_theme_and_manifest(client):

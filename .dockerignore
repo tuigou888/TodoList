@@ -19,6 +19,7 @@ build
 data
 flask_session
 tests
+docs
 venv
 .venv
 .coverage

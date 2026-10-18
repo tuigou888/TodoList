@@ -24,6 +24,7 @@ from flask import (
     redirect,
     render_template,
     request,
+    send_from_directory,
     session,
     url_for,
 )
@@ -197,6 +198,17 @@ def healthz():
         logger.exception("健康检查失败")
         return jsonify({"status": "error", "db": "error"}), 503
     return jsonify({"status": "ok", "db": "ok"})
+
+
+@app.route("/sw.js")
+def service_worker():
+    """Service Worker 必须从根路径提供，才能控制整个站点"""
+    response = send_from_directory(
+        app.static_folder, "sw.js", mimetype="application/javascript"
+    )
+    response.headers["Service-Worker-Allowed"] = "/"
+    response.headers["Cache-Control"] = "no-cache"
+    return response
 
 
 @app.route("/api/options", methods=["OPTIONS"])

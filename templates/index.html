@@ -1267,7 +1267,6 @@
 
             container.innerHTML = todos.map(todo => `
                 <div class="todo-item priority-item-${todo.priority || 2} ${todo.completed ? 'completed' : ''}" data-id="${todo.id}">
-                    <input type="checkbox" class="select-box" data-id="${todo.id}" ${selectedIds.has(todo.id) ? 'checked' : ''} onchange="toggleSelect(${todo.id}, this.checked)" aria-label="选择待办">
                     ${isTrash ? '' : `<button type="button" class="checkbox ${todo.completed ? 'checked' : ''}" role="checkbox" aria-checked="${todo.completed}" aria-label="标记完成" onclick="toggleTodo(${todo.id}, ${!todo.completed})" onkeydown="handleCheckboxKey(event, ${todo.id}, ${!todo.completed})"></button>`}
                     <div class="todo-content">
                         <div class="todo-title">${escapeHtml(todo.title)}</div>
@@ -1278,6 +1277,7 @@
                             <span class="todo-date">${isTrash ? '删除于 ' + formatDateTime(todo.deleted_at) : formatDateTime(todo.created_at)}</span>
                         </div>
                     </div>
+                    <input type="checkbox" class="select-box" data-id="${todo.id}" ${selectedIds.has(todo.id) ? 'checked' : ''} onchange="toggleSelect(${todo.id}, this.checked)" aria-label="选择待办">
                     ${todoActions(todo, isTrash)}
                 </div>
             `).join('');
