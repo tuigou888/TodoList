@@ -122,7 +122,7 @@ def test_legacy_hash_is_upgraded_on_login(client, db):
     assert row["password"].startswith(("scrypt:", "pbkdf2:"))
 
 
-def test_reset_token_flow_and_session_invalidation(client, monkeypatch):
+def test_reset_token_flow_and_session_invalidation(client, db):
     client.post(
         "/api/register",
         json={
@@ -134,18 +134,17 @@ def test_reset_token_flow_and_session_invalidation(client, monkeypatch):
     old_client = app_module.app.test_client()
     old_client.post("/api/login", json={"username": "alice", "password": "secret123"})
 
-    captured = []
-    monkeypatch.setattr(
-        app_module, "send_email", lambda to, subject, html: captured.append(html) or True
-    )
     assert (
         client.post(
             "/api/forgot-password", json={"email": "alice@example.com"}
         ).status_code
         == 200
     )
-    assert captured
-    token = re.search(r"/reset-password/([A-Za-z0-9_\-]+)", captured[-1]).group(1)
+    row = db.execute(
+        "SELECT html FROM email_outbox ORDER BY id DESC LIMIT 1"
+    ).fetchone()
+    assert row is not None
+    token = re.search(r"/reset-password/([A-Za-z0-9_\-]+)", row["html"]).group(1)
 
     assert client.get(f"/reset-password/{token}").status_code == 200
     assert (
@@ -177,7 +176,7 @@ def test_reset_token_flow_and_session_invalidation(client, monkeypatch):
     )
 
 
-def test_reset_token_is_stored_hashed(client, db, monkeypatch):
+def test_reset_token_is_stored_hashed(client, db):
     client.post(
         "/api/register",
         json={
@@ -185,20 +184,19 @@ def test_reset_token_is_stored_hashed(client, db, monkeypatch):
             "password": "secret123",
             "email": "alice@example.com",
         },
-    )
-    captured = []
-    monkeypatch.setattr(
-        app_module, "send_email", lambda to, subject, html: captured.append(html) or True
     )
     client.post("/api/forgot-password", json={"email": "alice@example.com"})
-    token = re.search(r"/reset-password/([A-Za-z0-9_\-]+)", captured[-1]).group(1)
+    row = db.execute(
+        "SELECT html FROM email_outbox ORDER BY id DESC LIMIT 1"
+    ).fetchone()
+    token = re.search(r"/reset-password/([A-Za-z0-9_\-]+)", row["html"]).group(1)
 
-    row = db.execute("SELECT token_hash FROM password_reset_tokens").fetchone()
-    assert token not in row["token_hash"]
-    assert len(row["token_hash"]) == 64
+    stored = db.execute("SELECT token_hash FROM password_reset_tokens").fetchone()
+    assert token not in stored["token_hash"]
+    assert len(stored["token_hash"]) == 64
 
 
-def test_forgot_password_rate_limit(client, monkeypatch):
+def test_forgot_password_rate_limit(client, db):
     client.post(
         "/api/register",
         json={
@@ -206,14 +204,10 @@ def test_forgot_password_rate_limit(client, monkeypatch):
             "password": "secret123",
             "email": "alice@example.com",
         },
-    )
-    captured = []
-    monkeypatch.setattr(
-        app_module, "send_email", lambda to, subject, html: captured.append(html) or True
     )
     for _ in range(6):
         client.post("/api/forgot-password", json={"email": "alice@example.com"})
-    assert len(captured) <= 5
+    assert db.execute("SELECT COUNT(*) FROM email_outbox").fetchone()[0] <= 5
 
 
 def test_change_password(client):

@@ -130,6 +130,11 @@ LOGIN_MAX_FAILURES = 5  # 窗口内允许的最大失败次数
 LOGIN_WINDOW_SECONDS = 900  # 统计窗口：15 分钟
 LOGIN_LOCK_SECONDS = 900  # 触发后的锁定时长：15 分钟
 
+# 邮件发送队列
+EMAIL_MAX_ATTEMPTS = 3
+EMAIL_RETRY_DELAYS = (60, 300, 900)  # 第 1/2/3 次重试的等待秒数
+EMAIL_OUTBOX_RETENTION_DAYS = 30
+
 
 def cors_response(response):
     """
@@ -330,6 +335,24 @@ def init_db():
     """
     )
 
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS email_outbox (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
+            to_email TEXT NOT NULL,
+            subject TEXT NOT NULL,
+            html TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'pending',
+            attempts INTEGER NOT NULL DEFAULT 0,
+            next_attempt_at TIMESTAMP NOT NULL,
+            last_error TEXT,
+            created_at TIMESTAMP NOT NULL,
+            sent_at TIMESTAMP
+        )
+    """
+    )
+
     # 老数据库补字段（幂等）
     ensure_column(conn, "users", "is_admin", "INTEGER DEFAULT 0")
     ensure_column(conn, "users", "is_active", "INTEGER DEFAULT 1")
@@ -379,6 +402,9 @@ def init_db():
     )
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_login_attempts_user ON login_attempts(username, attempted_at)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_email_outbox_status ON email_outbox(status, next_attempt_at)"
     )
 
     conn.commit()
@@ -766,7 +792,12 @@ def forgot_password():
     </html>
     """
 
-    success = send_email(email, "待办事项系统 - 密码重置", html_content)
+    success = enqueue_email(
+        email,
+        "待办事项系统 - 密码重置",
+        html_content,
+        user_id=user["id"],
+    )
 
     if success:
         return jsonify({"message": "如果邮箱存在，已发送重置链接"})
@@ -835,6 +866,98 @@ def handle_server_error(error):
     return "服务器内部错误", 500
 
 
+def enqueue_email(to_email, subject, html_content, user_id=None):
+    """把邮件写入发送队列，由调度器异步发送"""
+    now = now_string()
+    conn = get_db_connection()
+    try:
+        conn.execute(
+            """
+            INSERT INTO email_outbox
+                (user_id, to_email, subject, html, status, attempts, next_attempt_at, created_at)
+            VALUES (?, ?, ?, ?, 'pending', 0, ?, ?)
+            """,
+            (user_id, to_email, subject, html_content, now, now),
+        )
+        conn.commit()
+    except Exception:
+        logger.exception("邮件入队失败")
+        return False
+    finally:
+        conn.close()
+    return True
+
+
+def purge_email_outbox(days=EMAIL_OUTBOX_RETENTION_DAYS):
+    """清理超过保留期的已结束邮件"""
+    cutoff = now_string(datetime.now() - timedelta(days=days))
+    deleted = 0
+    conn = get_db_connection()
+    try:
+        cursor = conn.execute(
+            "DELETE FROM email_outbox WHERE status != 'pending' AND created_at < ?",
+            (cutoff,),
+        )
+        deleted = cursor.rowcount
+        conn.commit()
+    finally:
+        conn.close()
+    return deleted
+
+
+def process_email_outbox(limit=10):
+    """
+    处理到期的待发送邮件。
+    成功标记 sent；失败按退避间隔重试，达到上限后标记 failed。
+    """
+    if not Config.MAIL_ENABLED:
+        return 0
+
+    purge_email_outbox()
+
+    conn = get_db_connection()
+    try:
+        rows = conn.execute(
+            "SELECT * FROM email_outbox WHERE status = 'pending' AND next_attempt_at <= ? ORDER BY id ASC LIMIT ?",
+            (now_string(), limit),
+        ).fetchall()
+    finally:
+        conn.close()
+
+    processed = 0
+    for row in rows:
+        ok = send_email(row["to_email"], row["subject"], row["html"])
+        conn = get_db_connection()
+        try:
+            if ok:
+                conn.execute(
+                    "UPDATE email_outbox SET status = 'sent', attempts = attempts + 1, sent_at = ?, last_error = NULL WHERE id = ?",
+                    (now_string(), row["id"]),
+                )
+            else:
+                attempts = row["attempts"] + 1
+                if attempts >= EMAIL_MAX_ATTEMPTS:
+                    conn.execute(
+                        "UPDATE email_outbox SET status = 'failed', attempts = ?, last_error = ? WHERE id = ?",
+                        (attempts, "发送失败，已达最大重试次数", row["id"]),
+                    )
+                else:
+                    delay = EMAIL_RETRY_DELAYS[
+                        min(attempts - 1, len(EMAIL_RETRY_DELAYS) - 1)
+                    ]
+                    next_at = now_string(datetime.now() + timedelta(seconds=delay))
+                    conn.execute(
+                        "UPDATE email_outbox SET attempts = ?, next_attempt_at = ?, last_error = ? WHERE id = ?",
+                        (attempts, next_at, "SMTP 发送失败", row["id"]),
+                    )
+            conn.commit()
+        finally:
+            conn.close()
+        processed += 1
+
+    return processed
+
+
 LAST_DELETED_PURGE_DATE = None
 
 
@@ -875,10 +998,11 @@ def send_reminder_for_user(conn, user, now=None):
         return False
     now = now or datetime.now()
     html_content = build_reminder_email(user, todos, now)
-    return send_email(
+    return enqueue_email(
         user["email"],
         f"待办事项提醒 - {now.strftime('%Y-%m-%d')}",
         html_content,
+        user_id=user["id"],
     )
 
 
@@ -995,6 +1119,11 @@ def start_reminder_scheduler():
                 send_scheduled_reminders()
             except Exception:
                 logger.exception("提醒任务执行失败")
+
+            try:
+                process_email_outbox()
+            except Exception:
+                logger.exception("邮件队列处理失败")
 
             # 对齐到下一分钟，避免长期运行产生漂移
             time.sleep(max(60 - datetime.now().second, 1))
@@ -1875,6 +2004,12 @@ def admin_stats():
         "SELECT COUNT(*) FROM todos WHERE completed = 0 AND deleted_at IS NULL AND due_date IS NOT NULL AND due_date < ?",
         (today,),
     ).fetchone()[0]
+    emails_pending = conn.execute(
+        "SELECT COUNT(*) FROM email_outbox WHERE status = 'pending'"
+    ).fetchone()[0]
+    emails_failed = conn.execute(
+        "SELECT COUNT(*) FROM email_outbox WHERE status = 'failed'"
+    ).fetchone()[0]
     conn.close()
 
     completion_rate = (
@@ -1893,6 +2028,8 @@ def admin_stats():
             "todos_pending": todos_pending,
             "todos_today": todos_today,
             "todos_overdue": todos_overdue,
+            "emails_pending": emails_pending,
+            "emails_failed": emails_failed,
             "completion_rate": completion_rate,
         }
     )
@@ -1932,6 +2069,56 @@ def get_audit_logs():
             for row in rows
         ]
     )
+
+
+@app.route("/api/admin/emails", methods=["GET"])
+@admin_required
+def get_outbox_emails():
+    """查看邮件发送队列"""
+    status = request.args.get("status", "failed")
+    if status not in ("pending", "sent", "failed", "all"):
+        return jsonify({"error": "status 只支持 pending/sent/failed/all"}), 400
+
+    limit = request.args.get("limit", 20, type=int) or 20
+    limit = min(max(limit, 1), 100)
+
+    columns = "id, user_id, to_email, subject, status, attempts, next_attempt_at, last_error, created_at, sent_at"
+    conn = get_db_connection()
+    try:
+        if status == "all":
+            rows = conn.execute(
+                f"SELECT {columns} FROM email_outbox ORDER BY id DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                f"SELECT {columns} FROM email_outbox WHERE status = ? ORDER BY id DESC LIMIT ?",
+                (status, limit),
+            ).fetchall()
+    finally:
+        conn.close()
+
+    return jsonify([dict(row) for row in rows])
+
+
+@app.route("/api/admin/emails/<int:email_id>/retry", methods=["POST"])
+@admin_required
+def retry_email(email_id):
+    """把失败邮件重新加入发送队列"""
+    conn = get_db_connection()
+    try:
+        cursor = conn.execute(
+            "UPDATE email_outbox SET status = 'pending', attempts = 0, next_attempt_at = ?, last_error = NULL WHERE id = ?",
+            (now_string(), email_id),
+        )
+        if cursor.rowcount == 0:
+            return jsonify({"error": "邮件不存在"}), 404
+        log_audit(conn, session["user_id"], "retry_email", "email", email_id)
+        conn.commit()
+    finally:
+        conn.close()
+
+    return jsonify({"message": "已重新加入发送队列"})
 
 
 @app.route("/api/admin/users", methods=["GET"])
@@ -2261,6 +2448,7 @@ def delete_user(user_id):
         # 先删关联数据再删用户：兼容历史数据库（外键可能未启用级联）
         conn.execute("DELETE FROM password_reset_tokens WHERE user_id = ?", (user_id,))
         conn.execute("DELETE FROM password_reset_requests WHERE user_id = ?", (user_id,))
+        conn.execute("DELETE FROM email_outbox WHERE user_id = ?", (user_id,))
         conn.execute("DELETE FROM todos WHERE user_id = ?", (user_id,))
         conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
         log_audit(conn, session["user_id"], "delete_user", "user", user_id)

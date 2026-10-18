@@ -18,9 +18,11 @@ def _set_reminder_now(conn, enabled=1):
 
 def test_scheduled_reminder_sends_once_per_day(auth_client, monkeypatch):
     auth_client.post("/api/todos", json={"title": "任务"})
-    captured = []
+    queued = []
     monkeypatch.setattr(
-        app_module, "send_email", lambda to, subject, html: captured.append(html) or True
+        app_module,
+        "enqueue_email",
+        lambda to, subject, html, user_id=None: queued.append(to) or True,
     )
     monkeypatch.setattr(app_module.Config, "MAIL_ENABLED", True)
 
@@ -30,14 +32,16 @@ def test_scheduled_reminder_sends_once_per_day(auth_client, monkeypatch):
 
     assert app_module.send_scheduled_reminders() == 1
     assert app_module.send_scheduled_reminders() == 0
-    assert len(captured) == 1
+    assert len(queued) == 1
 
 
 def test_scheduled_reminder_respects_switch(auth_client, monkeypatch):
     auth_client.post("/api/todos", json={"title": "任务"})
-    captured = []
+    queued = []
     monkeypatch.setattr(
-        app_module, "send_email", lambda to, subject, html: captured.append(html) or True
+        app_module,
+        "enqueue_email",
+        lambda to, subject, html, user_id=None: queued.append(to) or True,
     )
     monkeypatch.setattr(app_module.Config, "MAIL_ENABLED", True)
 
@@ -46,7 +50,7 @@ def test_scheduled_reminder_respects_switch(auth_client, monkeypatch):
     conn.close()
 
     assert app_module.send_scheduled_reminders() == 0
-    assert captured == []
+    assert queued == []
 
 
 def test_manual_reminder_is_rate_limited(auth_client, monkeypatch):

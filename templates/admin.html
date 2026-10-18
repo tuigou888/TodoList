@@ -807,6 +807,14 @@
                 <span class="stat-value" id="statRate">-</span>
                 <span class="stat-label">完成率</span>
             </div>
+            <div class="stat-card">
+                <span class="stat-value" id="statEmailsPending">-</span>
+                <span class="stat-label">待发邮件</span>
+            </div>
+            <div class="stat-card">
+                <span class="stat-value" id="statEmailsFailed">-</span>
+                <span class="stat-label">失败邮件</span>
+            </div>
         </div>
 
         <div class="toolbar">
@@ -856,6 +864,15 @@
                 </table>
             </div>
             <div class="pagination" id="pagination"></div>
+        </div>
+        <div class="audit-card">
+            <div class="table-header">
+                <h2>邮件队列</h2>
+                <button class="btn-view" onclick="loadEmails()">刷新</button>
+            </div>
+            <div class="audit-list" id="emailList">
+                <p class="audit-empty">加载中...</p>
+            </div>
         </div>
         <div class="audit-card">
             <div class="table-header">
@@ -991,6 +1008,7 @@
             loadStats();
             loadUsers();
             loadAuditLogs();
+            loadEmails();
         }
 
         function updateDateTime() {
@@ -1051,6 +1069,8 @@
                 document.getElementById('statPending').textContent = stats.todos_pending;
                 document.getElementById('statOverdue').textContent = stats.todos_overdue;
                 document.getElementById('statRate').textContent = stats.completion_rate + '%';
+                document.getElementById('statEmailsPending').textContent = stats.emails_pending;
+                document.getElementById('statEmailsFailed').textContent = stats.emails_failed;
             } catch (error) {
                 // 统计失败不影响主流程
             }
@@ -1180,6 +1200,56 @@
                 `).join('');
             } catch (error) {
                 // 日志加载失败不影响主流程
+            }
+        }
+
+        const EMAIL_STATUS_LABELS = { pending: '待发送', sent: '已发送', failed: '失败' };
+
+        async function loadEmails() {
+            try {
+                const response = await fetch('/api/admin/emails?status=all&limit=10');
+                if (!response.ok) {
+                    return;
+                }
+                const emails = await response.json();
+                const container = document.getElementById('emailList');
+
+                if (!emails.length) {
+                    container.innerHTML = '<p class="audit-empty">暂无邮件记录</p>';
+                    return;
+                }
+
+                container.innerHTML = emails.map(mail => `
+                    <div class="audit-item">
+                        <span>${EMAIL_STATUS_LABELS[mail.status] || mail.status} · ${escapeHtml(mail.to_email)} · ${escapeHtml(mail.subject)}${mail.last_error ? ' · ' + escapeHtml(mail.last_error) : ''}</span>
+                        <span class="audit-time">
+                            ${formatDateTime(mail.created_at)}
+                            ${mail.status === 'failed' ? '<button class="btn-unlock" onclick="retryEmail(' + mail.id + ')">重发</button>' : ''}
+                        </span>
+                    </div>
+                `).join('');
+            } catch (error) {
+                // 邮件队列加载失败不影响主流程
+            }
+        }
+
+        async function retryEmail(emailId) {
+            try {
+                const response = await fetch(`/api/admin/emails/${emailId}/retry`, {
+                    method: 'POST'
+                });
+                const result = await response.json();
+
+                if (response.ok) {
+                    showToast(result.message || '已重新加入队列', 'success');
+                    loadEmails();
+                    loadStats();
+                    loadAuditLogs();
+                } else {
+                    showToast(result.error || '重发失败', 'error');
+                }
+            } catch (error) {
+                showToast('重发失败，请稍后重试', 'error');
             }
         }
 
