@@ -66,14 +66,19 @@ cp .env.example .env     # Linux/Mac
 编辑 `.env` 文件，配置以下内容：
 
 ```env
-# 密钥（必须修改）
+# 密钥（必须修改，至少 16 位）
 SECRET_KEY=your-random-secret-key
+
+# 站点地址（邮件里的链接）
+BASE_URL=https://your-domain.com
 
 # 邮件配置（可选）
 MAIL_ENABLED=True
 MAIL_SERVER=smtp.qq.com
 MAIL_PORT=587
 MAIL_USE_TLS=True
+MAIL_USE_SSL=False
+MAIL_TIMEOUT=15
 MAIL_USERNAME=your-email@qq.com
 MAIL_PASSWORD=your-auth-code
 MAIL_DEFAULT_SENDER=your-email@qq.com
@@ -186,12 +191,18 @@ ports:
 
 ### 健康检查
 
-Docker Compose 配置了健康检查：
+Docker Compose 配置了健康检查（容器内通过 `curl` 访问 `/healthz`）：
 
 ```yaml
 healthcheck:
-  test: ["CMD", "curl", "-f", "http://localhost:5145/"]
+  test: ["CMD", "curl", "-fsS", "http://localhost:5145/healthz"]
+  interval: 30s
+  timeout: 5s
+  retries: 3
+  start_period: 20s
 ```
+
+`/healthz` 会检查数据库连通性，返回 `{"status":"ok","db":"ok"}`。
 
 ---
 
@@ -217,12 +228,18 @@ sudo chown -R 1000:1000 .
 
 ### Q3: 容器内无法访问数据库
 
+首次启动时如果 `todos.db` 不存在，Docker 可能把挂载点创建成目录。容器的 `docker-entrypoint.sh` 会自动检测并删除该目录、创建数据库文件。
+
+如果仍失败：
+
 ```bash
-# 检查数据库文件是否存在
+# 检查宿主机上是文件还是目录
 ls -la todos.db
 
-# 如果不存在，手动创建
-touch todos.db
+# 如果是目录，停止容器后删除，再启动
+docker-compose down
+rm -rf todos.db
+docker-compose up -d
 ```
 
 ### Q4: 邮件发送失败
@@ -289,6 +306,17 @@ sudo apt install certbot python3-certbot-nginx
 # 获取证书
 sudo certbot --nginx -d your-domain.com
 ```
+
+启用 HTTPS 后，建议在 `.env` 中设置：
+
+```env
+BASE_URL=https://your-domain.com
+SESSION_COOKIE_SECURE=True
+```
+
+`SESSION_COOKIE_SECURE=True` 时应用还会响应 `Strict-Transport-Security` 头。
+
+反向代理建议把 `/healthz` 暴露给监控系统，用于探活。
 
 ### 3. 备份
 

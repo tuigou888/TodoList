@@ -1,69 +1,88 @@
 # AGENTS.md
+
 ## 交互要求
 
-- Thinking思考过程用中文表述
-- Reply回答也要用中文回复
+- Thinking 思考过程用中文表述
+- Reply 回答也要用中文回复
+
 ## Commands
 
-| Action       | Command                                                                      |
-| ------------ | ---------------------------------------------------------------------------- |
-| Dev server   | `python app.py` (port 5145, debug mode)                                      |
-| Production   | `gunicorn -c gunicorn.conf.py app:app` (4 workers)                           |
-| Docker       | `docker-compose up -d`                                                       |
-| DB migration | `python migrate_db.py` (adds missing columns, creates default admin if none) |
-| Install deps | `pip install -r requirements.txt`                                            |
+| Action       | Command                                                                                          |
+| ------------ | ------------------------------------------------------------------------------------------------ |
+| Dev server   | `python app.py`（端口 5145，debug，自动启动提醒调度器）                                          |
+| Production   | `gunicorn -c gunicorn.conf.py app:app`（4 workers）                                              |
+| Docker       | `docker-compose up -d`                                                                           |
+| DB migration | `python migrate_db.py`（补字段/表/索引；仅在没有任何管理员时创建管理员）                         |
+| Install deps | `pip install -r requirements.txt`                                                                |
+| Dev deps     | `pip install -r requirements-dev.txt`（pytest + ruff）                                           |
+| Test         | `pytest -q`                                                                                      |
+| Lint         | `ruff check .`                                                                                   |
 
 ## Setup
 
-1. `cp .env.example .env` → set `SECRET_KEY` (required)
-2. `python -m venv venv` + activate
+1. `cp .env.example .env` → 设置 `SECRET_KEY`（必填，至少 16 位随机字符串）与 `BASE_URL`
+2. `python -m venv venv` + 激活
 3. `pip install -r requirements.txt`
-4. `python app.py` → DB auto-creates on first run
+4. `python app.py` → 首次运行自动建库并补字段
 
 ## Architecture
 
-- **Single-file app**: All logic in `app.py` (\~1368 lines). No blueprints, no package structure.
-- **DB**: SQLite `todos.db` at project root. Auto-created by `init_db()`. Uses `sqlite3.Row` for dict-style access.
-- **Templates**: `templates/` — 6 HTML files (index, login, register, admin, forgot/reset password). Inline CSS, no build step.
-- **Session**: Flask-Session, filesystem storage in `flask_session/`.
-- **Timezone**: `Asia/Shanghai` (set via `os.environ["TZ"]` and Docker).
+- **Entry**：`app.py` —— Flask 配置、认证装饰器、密码重置令牌、全部路由、提醒调度器。
+- **Shared modules**：`todo_app/`
+  - `validators.py`：输入校验、JSON 请求解析、待办序列化
+  - `security.py`：密码哈希（Werkzeug scrypt）、旧 SHA-256 校验与升级、令牌哈希
+  - `mailer.py`：SMTP 发送（SSL/STARTTLS、超时）与提醒邮件模板
+  - `audit.py`：管理员操作审计日志
+- **DB**：SQLite，路径由 `DB_NAME` 环境变量决定（默认 `todos.db`）。WAL、外键开启、查询索引齐全；`init_db()` 幂等补字段。
+- **Templates**：`templates/` 共 7 个 HTML（index/login/register/admin/settings/forgot/reset）。内联 CSS/JS，无构建步骤。
+- **Session**：Flask-Session 文件存储；`users.session_version` 用于在改密、重置密码、禁用、退出所有设备后使旧会话立即失效。
+- **Reminder**：后台 daemon 线程，每分钟检查；按用户 `reminder_time` 每天最多一封，`last_reminded_on` 在数据库层原子占位，多 worker 安全。
+- **Timezone**：Docker 设置 `TZ=Asia/Shanghai`；Windows 本地遵循系统时区（`os.environ["TZ"]` 在 Windows 不生效）。
 
 ## Key Quirks
 
-- **Password hashing**: SHA-256 only (`hashlib.sha256`). Not bcrypt/argon2.
-- **Password reset tokens**: Stored in-memory (`RESET_TOKENS` dict). Lost on app restart. 1-hour expiry.
-- **Email reminders**: Background daemon thread, checks hourly at 7:30–21:30 Beijing time. Uses `time.sleep()` to wait for next hour.
-- **Gunicorn hooks**: `when_ready()` in `gunicorn.conf.py` calls `init_db()` and `start_reminder_scheduler()`. The `on_starting`/`when_ready` functions are also defined at module level in `app.py` (duplicate — Gunicorn uses the config file version).
-- **CORS + security headers**: Applied via `cors_response()` helper, attached to every response through `@app.after_request`.
-- **`migrate_db.py`**: Idempotent migration script — only adds columns that don't exist. Creates default admin (`admin`/`admin123`) if no admincommand 'markdown.extension.onBackspaceKey' not found
+- **密码**：Werkzeug `scrypt` 哈希；历史 SHA-256 哈希在登录成功后自动升级。
+- **重置令牌**：存于数据库 `password_reset_tokens`（只存哈希、1 小时有效、单次使用、每用户最多 3 个）；请求流水在 `password_reset_requests`，5 分钟内最多 5 次。
+- **邮件**：465 端口需 `MAIL_USE_SSL=True`，587 端口用 `MAIL_USE_TLS=True`；`MAIL_TIMEOUT` 默认 15 秒；未配置账号密码时不会发送。
+- **审计**：管理员创建/编辑/禁用/删除用户、重置密码，以及用户改密/改邮箱/退出所有设备，写入 `audit_logs`。
+- **健康检查**：`GET /healthz` 返回数据库连通状态，供 Docker/反向代理探活。
+- **Gunicorn**：`when_ready()` 先 `validate_config(strict=True)`，再 `init_db()`、`start_reminder_scheduler()`；配置错误会拒绝启动。
+- **CORS/CSP**：统一在 `cors_response()` 中处理；通配符 Origin 不会同时下发 credentials。
+- **`migrate_db.py`**：幂等迁移脚本，补字段/表/索引；不设置 `ADMIN_PASSWORD` 时生成随机临时密码并打印。
+
 ## File Boundaries
 
-| Path               | Role                                                   |
-| ------------------ | ------------------------------------------------------ |
-| `app.py`           | All routes, DB logic, email, scheduler                 |
-| `config.py`        | `Config` class — reads env vars via `os.environ.get()` |
-| `gunicorn.conf.py` | Prod server config + startup hooks                     |
-| `migrate_db.py`    | Standalone DB migration (run manually)                 |
-| `todos.db`         | SQLite database (gitignored, volume-mounted in Docker) |
-| `flask_session/`   | Session files (gitignored, Docker volume)              |
+| Path                    | Role                                                       |
+| ----------------------- | ---------------------------------------------------------- |
+| `app.py`                | 路由、认证、令牌流程、提醒调度、Flask 配置                 |
+| `todo_app/validators.py`| 输入校验与待办序列化                                       |
+| `todo_app/security.py`  | 密码/令牌哈希                                              |
+| `todo_app/mailer.py`    | 邮件发送与邮件模板                                         |
+| `todo_app/audit.py`     | 审计日志                                                   |
+| `config.py`             | `Config` 类，读取环境变量                                  |
+| `gunicorn.conf.py`      | 生产服务器配置 + 启动钩子                                  |
+| `migrate_db.py`         | 独立迁移脚本（手工运行）                                   |
+| `templates/`            | 7 个页面模板                                               |
+| `tests/`                | pytest 测试套件                                            |
+| `pyproject.toml`        | pytest / ruff 配置                                         |
+| `requirements-dev.txt`  | 测试与 lint 依赖                                           |
+| `docker-entrypoint.sh`  | 修复首次 bind mount 的 DB 目录问题，切换非 root 用户启动   |
+| `todos.db`              | SQLite 数据库（gitignored，Docker 中挂载）                 |
+| `flask_session/`        | 会话文件（gitignored，Docker 命名卷）                      |
 
 ## Docker Notes
 
-- Port: `5145`
-- `todos.db` bind-mounted from host: `./todos.db:/app/todos.db`
-- `flask_session` uses named volume `flask_session_data`
-- Healthcheck: `curl -f http://localhost:5145/` every 30s
-- Dockerfile sets `TZ=Asia/Shanghai`
+- 端口 `5145`；健康检查 `GET /healthz`
+- `todos.db` 从宿主机挂载：`./todos.db:/app/todos.db`；entrypoint 会处理"文件不存在被 Docker 建成目录"的首次启动问题
+- `flask_session` 使用命名卷 `flask_session_data`
+- 容器通过 `gosu` 以非 root 用户 `app` 运行
+- 镜像内保留 `migrate_db.py`；`tests/`、`venv/` 被 `.dockerignore` 排除
 
 ## Conventions
 
-- No test framework, no linter, no formatter, no type checker.
-- All API routes return JSON. Page routes return `render_template()`.
-- Auth via `@login_required` and `@admin_required` decorators.
-- SQL uses parameterized queries (`?` placeholders).
-- Error responses: `jsonify({"error": "message"}), <status_code>`.
-
-<br />
-
-<br />
-
+- 测试使用 pytest，提交前运行 `pytest -q`；lint 使用 `ruff check .`。
+- 所有 API 返回 JSON；页面返回 `render_template()`。
+- 认证通过 `@login_required` / `@admin_required`，并校验 `session_version` 与账户启用状态。
+- SQL 使用参数化查询（`?` 占位符）；动态字段名仅来自代码内白名单。
+- 错误响应统一为 `jsonify({"error": "message"}), <status_code>`。
+- `python app.py` 的 debug reloader 只会在工作子进程启动提醒调度器，避免重复发送。

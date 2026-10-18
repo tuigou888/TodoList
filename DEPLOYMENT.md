@@ -14,7 +14,7 @@
 
 ### 最低要求
 
-- Python 3.8+
+- Python 3.10+
 - SQLite 3
 - 至少 100MB 可用磁盘空间
 - 至少 256MB RAM
@@ -71,8 +71,6 @@ docker run -d -p 5145:5145 --env-file .env todo-list-app
 ### 6. Docker Compose 配置说明
 
 ```yaml
-version: '3.8'
-
 services:
   todo-app:
     build: .
@@ -81,11 +79,22 @@ services:
       - "5145:5145"
     env_file:
       - .env
+    environment:
+      - TZ=Asia/Shanghai
+      - FLASK_DEBUG=0
     volumes:
       - ./todos.db:/app/todos.db
       - flask_session_data:/app/flask_session
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:5145/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
 ```
+
+容器入口会修复"首次挂载时 Docker 把 `todos.db` 建成目录"的问题，并以非 root 用户 `app` 启动服务。
 
 ## 本地运行
 
@@ -145,11 +154,17 @@ gunicorn -w 4 -b 0.0.0.0:5145 app:app
 
 | 参数 | 说明 | 默认值 |
 |------|------|--------|
-| SECRET_KEY | Flask 密钥（必填） | - |
+| SECRET_KEY | Flask 密钥（必填，至少 16 位） | - |
+| BASE_URL | 站点对外地址（邮件链接） | http://localhost:5145 |
+| DB_NAME | 数据库路径 | todos.db |
+| SESSION_COOKIE_SECURE | 仅 HTTPS 发送 Cookie | False |
+| MAX_CONTENT_LENGTH | 请求体上限（字节） | 2097152 |
 | MAIL_ENABLED | 启用邮件服务 | True |
 | MAIL_SERVER | SMTP 服务器 | smtp.qq.com |
 | MAIL_PORT | SMTP 端口 | 587 |
-| MAIL_USE_TLS | 使用 TLS | True |
+| MAIL_USE_TLS | 使用 STARTTLS（587） | True |
+| MAIL_USE_SSL | 使用 SSL 直连（465） | False |
+| MAIL_TIMEOUT | SMTP 超时（秒） | 15 |
 | MAIL_USERNAME | 邮箱账号 | - |
 | MAIL_PASSWORD | 邮箱密码/授权码 | - |
 | MAIL_DEFAULT_SENDER | 发件人邮箱 | - |
@@ -158,11 +173,20 @@ gunicorn -w 4 -b 0.0.0.0:5145 app:app
 
 ### 设置管理员
 
-数据库创建后，可通过以下方式设置管理员：
+```bash
+python migrate_db.py
+```
+
+- 已存在管理员时不会重复创建
+- 设置 `ADMIN_PASSWORD` 时使用该密码；否则生成随机临时密码并打印一次
+- 也可通过 `ADMIN_USERNAME` / `ADMIN_EMAIL` 自定义
+
+### 测试与检查
 
 ```bash
-sqlite3 todos.db
-sqlite> UPDATE users SET is_admin = 1 WHERE username = 'your_username';
+pip install -r requirements-dev.txt
+pytest -q
+ruff check .
 ```
 
 ## 常见问题
@@ -180,14 +204,18 @@ docker-compose.yml 中修改 ports
 ### 2. 数据库权限问题
 
 ```bash
-# 修改数据库文件权限
-chmod 644 todos.db
+# 容器内以非 root 用户 app 运行；Linux 宿主机需保证挂载文件可写
+sudo chown 1000:1000 todos.db
+chmod 664 todos.db
 ```
+
+首次启动时如果 `todos.db` 不存在，Docker 可能把它创建为目录；entrypoint 会自动检测并修复。
 
 ### 3. Session 问题
 
-- 使用 Docker 时，会话数据存储在卷中
-- 重启容器后会话会丢失（正常行为）
+- 使用 Docker 时，会话数据存储在命名卷中
+- 重启容器后会话会保留在卷中
+- 修改密码、重置密码、禁用账户或"退出所有设备"会使旧会话立即失效
 
 ### 4. 邮件发送失败
 

@@ -22,23 +22,38 @@ from flask_session import Session
 import sqlite3
 from datetime import datetime, timedelta
 from functools import wraps
-import hashlib
-import hmac
-import re
 import secrets
-import smtplib
-from html import escape as html_escape
-from werkzeug.security import check_password_hash, generate_password_hash
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
-from email.utils import formataddr
 import threading
 import time
+from html import escape as html_escape
 from dotenv import load_dotenv
 
 # 加载环境变量
 load_dotenv()
 from config import Config
+
+from todo_app.audit import log_audit
+from todo_app.mailer import build_reminder_email, send_email
+from todo_app.security import (
+    hash_password,
+    hash_reset_token,
+    legacy_hash_password,
+    verify_password,
+)
+from todo_app.validators import (
+    MAX_TODO_DESCRIPTION,
+    MAX_TODO_TITLE,
+    USERNAME_PATTERN,
+    VALID_PRIORITIES,
+    read_json_object,
+    serialize_todo,
+    validate_date,
+    validate_email,
+    validate_password,
+    validate_priority,
+    validate_text,
+    validate_username,
+)
 
 # 初始化 Flask 应用
 app = Flask(__name__)
@@ -67,8 +82,8 @@ app.config["MAX_CONTENT_LENGTH"] = int(
 )
 Session(app)
 
-# 数据库文件名
-DB_NAME = "todos.db"
+# 数据库文件名（Docker 部署可通过 DB_NAME 指向挂载目录）
+DB_NAME = os.environ.get("DB_NAME", "todos.db")
 
 # 站点的对外访问地址（用于邮件里的链接），生产环境必须配置
 BASE_URL = os.environ.get("BASE_URL", "http://localhost:5145").rstrip("/")
@@ -153,6 +168,19 @@ def cors_response(response):
 @app.after_request
 def after_request(response):
     return cors_response(response)
+
+
+@app.route("/healthz")
+def healthz():
+    """健康检查：用于 Docker HEALTHCHECK 与反向代理探活"""
+    try:
+        conn = get_db_connection()
+        conn.execute("SELECT 1")
+        conn.close()
+    except Exception:
+        logger.exception("健康检查失败")
+        return jsonify({"status": "error", "db": "error"}), 503
+    return jsonify({"status": "ok", "db": "ok"})
 
 
 @app.route("/api/options", methods=["OPTIONS"])
@@ -320,43 +348,6 @@ def init_db():
     conn.close()
 
 
-def hash_password(password):
-    """
-    密码加密函数
-    使用 Werkzeug 的安全哈希（默认 scrypt，自带随机 salt）
-    """
-    return generate_password_hash(password)
-
-
-def legacy_hash_password(password):
-    """
-    旧版无盐 SHA-256，仅用于校验历史密码并在登录后自动升级
-    """
-    return hashlib.sha256(password.encode()).hexdigest()
-
-
-def verify_password(stored_hash, password):
-    """
-    校验密码。
-    返回 (是否匹配, 是否需要升级哈希)
-    """
-    if not stored_hash:
-        return False, False
-
-    try:
-        if check_password_hash(stored_hash, password):
-            return True, False
-    except (ValueError, TypeError):
-        # 历史 SHA-256 哈希不是 Werkzeug 格式，会在这里失败
-        pass
-
-    if isinstance(stored_hash, str) and re.fullmatch(r"[0-9a-f]{64}", stored_hash):
-        if hmac.compare_digest(stored_hash, legacy_hash_password(password)):
-            return True, True
-
-    return False, False
-
-
 def validate_config(strict=None):
     """
     校验关键配置。
@@ -443,64 +434,9 @@ def admin_required(f):
     return decorated_function
 
 
-def send_email(to_email, subject, html_content):
-    """
-    发送邮件函数
-    :param to_email: 收件人邮箱
-    :param subject: 邮件主题
-    :param html_content: 邮件HTML内容
-    :return: 发送成功返回 True，失败返回 False
-    """
-    if not Config.MAIL_ENABLED or not Config.MAIL_USERNAME or not Config.MAIL_PASSWORD:
-        logger.warning("邮件服务未配置或未启用")
-        return False
-
-    try:
-        msg = MIMEMultipart("alternative")
-        msg["From"] = formataddr(("待办事项提醒", Config.MAIL_DEFAULT_SENDER))
-        msg["To"] = to_email
-        msg["Subject"] = subject
-
-        html_part = MIMEText(html_content, "html", "utf-8")
-        msg.attach(html_part)
-
-        # 465 端口通常是 SSL 直连，587 端口才使用 STARTTLS
-        use_ssl = bool(getattr(Config, "MAIL_USE_SSL", False)) or (
-            Config.MAIL_PORT == 465 and not Config.MAIL_USE_TLS
-        )
-        timeout = getattr(Config, "MAIL_TIMEOUT", 15)
-        if use_ssl:
-            server = smtplib.SMTP_SSL(
-                Config.MAIL_SERVER, Config.MAIL_PORT, timeout=timeout
-            )
-        else:
-            server = smtplib.SMTP(
-                Config.MAIL_SERVER, Config.MAIL_PORT, timeout=timeout
-            )
-
-        with server:
-            if Config.MAIL_USE_TLS and not use_ssl:
-                server.starttls()
-            server.login(Config.MAIL_USERNAME, Config.MAIL_PASSWORD)
-            server.send_message(msg)
-
-        # 收件人邮箱属于个人信息，只在 DEBUG 级别记录
-        logger.debug("邮件已发送至: %s", to_email)
-        logger.info("提醒邮件发送成功")
-        return True
-    except Exception as e:
-        logger.error("邮件发送失败: %s", e)
-        return False
-
-
 def now_string(moment=None):
     """统一的时间字符串格式（本地时间，精确到秒）"""
     return (moment or datetime.now()).strftime("%Y-%m-%d %H:%M:%S")
-
-
-def hash_reset_token(token):
-    """令牌只以哈希形式落库，数据库泄露时无法直接使用"""
-    return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
 def cleanup_reset_tokens(conn, now=None):
@@ -744,113 +680,6 @@ def reset_password():
     return jsonify({"message": "密码重置成功"})
 
 
-# ==================== 输入校验 ====================
-
-USERNAME_PATTERN = re.compile(r"^[A-Za-z0-9_\u4e00-\u9fa5-]{3,32}$")
-EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
-MAX_TODO_TITLE = 200
-MAX_TODO_DESCRIPTION = 2000
-
-
-def normalize_email(email):
-    """邮箱统一小写存储与查询，避免大小写导致重复账号"""
-    return (email or "").strip().lower()
-
-
-def validate_username(username):
-    username = (username or "").strip()
-    if not USERNAME_PATTERN.fullmatch(username):
-        return None, "用户名需为3-32位字母、数字、下划线、中文或连字符"
-    return username, None
-
-
-def validate_email(email):
-    email = normalize_email(email)
-    if len(email) > 254 or not EMAIL_PATTERN.fullmatch(email):
-        return None, "请输入有效的邮箱地址"
-    return email, None
-
-
-def validate_password(password):
-    if not isinstance(password, str) or len(password) < 6:
-        return None, "密码至少需要6个字符"
-    if len(password) > 128:
-        return None, "密码不能超过128个字符"
-    return password, None
-
-
-def validate_text(value, field_name, max_length, required=False):
-    if value is None:
-        value = ""
-    if not isinstance(value, str):
-        return None, f"{field_name}必须是文本"
-    value = value.strip()
-    if required and not value:
-        return None, f"{field_name}不能为空"
-    if len(value) > max_length:
-        return None, f"{field_name}不能超过{max_length}个字符"
-    return value, None
-
-
-VALID_PRIORITIES = (1, 2, 3)
-PRIORITY_LABELS = {1: "低", 2: "普通", 3: "高"}
-
-
-def validate_date(value, field_name="日期"):
-    if value in (None, ""):
-        return None, None
-    if not isinstance(value, str):
-        return None, f"{field_name}格式必须为 YYYY-MM-DD"
-    value = value.strip()
-    try:
-        datetime.strptime(value, "%Y-%m-%d")
-    except ValueError:
-        return None, f"{field_name}格式必须为 YYYY-MM-DD"
-    return value, None
-
-
-def validate_priority(value):
-    if value is None or value == "":
-        return 2, None
-    try:
-        priority = int(value)
-    except (TypeError, ValueError):
-        return None, "优先级必须是 1-3 的整数"
-    if priority not in VALID_PRIORITIES:
-        return None, "优先级必须是 1-3 的整数"
-    return priority, None
-
-
-def serialize_todo(todo):
-    """统一的待办事项输出结构"""
-    return {
-        "id": todo["id"],
-        "title": todo["title"],
-        "description": todo["description"],
-        "completed": bool(todo["completed"]),
-        "priority": todo["priority"] if todo["priority"] is not None else 2,
-        "due_date": todo["due_date"],
-        "created_date": todo["created_date"],
-        "created_at": todo["created_at"],
-        "completed_at": todo["completed_at"],
-        "updated_at": todo["updated_at"],
-    }
-
-
-def log_audit(conn, actor_id, action, target_type=None, target_id=None, detail=None):
-    """记录关键操作，便于管理员追溯"""
-    conn.execute(
-        "INSERT INTO audit_logs (actor_id, action, target_type, target_id, detail, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-        (actor_id, action, target_type, target_id, detail, now_string()),
-    )
-
-
-def read_json_object():
-    """读取 JSON 请求体；非对象或格式错误时返回 None，由调用方返回 400"""
-    data = request.get_json(silent=True)
-    return data if isinstance(data, dict) else None
-
-
 # ==================== 统一错误响应 ====================
 
 CLIENT_ERROR_MESSAGES = {
@@ -884,97 +713,6 @@ def handle_server_error(error):
     if wants_json_response():
         return jsonify({"error": "服务器内部错误"}), 500
     return "服务器内部错误", 500
-
-
-def format_time_ago(created_at_str):
-    """
-    格式化时间差，显示已过去多久
-    """
-    try:
-        created_at = datetime.strptime(created_at_str, "%Y-%m-%d %H:%M:%S")
-        now = datetime.now()
-        diff = now - created_at
-
-        days = diff.days
-        hours = diff.seconds // 3600
-        minutes = (diff.seconds % 3600) // 60
-
-        if days > 0:
-            return f"{days}天前"
-        elif hours > 0:
-            return f"{hours}小时前"
-        elif minutes > 0:
-            return f"{minutes}分钟前"
-        else:
-            return "刚刚"
-    except:
-        return "未知"
-
-
-def build_reminder_email(user, todos, now=None):
-    """构建每日提醒邮件，所有用户输入均已转义"""
-    now = now or datetime.now()
-    todo_items_html = ""
-    for todo in todos:
-        created_at = todo["created_at"]
-        todo_items_html += f"""
-        <div class="todo-item">
-            <div class="todo-title">{html_escape(todo["title"])}</div>
-            <div class="todo-meta">
-                <span class="todo-date">创建于: {html_escape(str(created_at or ""))}</span>
-                <span class="time-ago">已过去: {format_time_ago(created_at)}</span>
-            </div>
-        </div>
-        """
-
-    reminder_time = user["reminder_time"] or 540
-    reminder_hour = reminder_time // 60
-    reminder_minute = reminder_time % 60
-
-    return f"""
-    <html>
-    <head>
-        <style>
-            body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
-            .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
-            .header {{ background: linear-gradient(135deg, #4A90D9 0%, #67B8DE 100%); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }}
-            .content {{ background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px; }}
-            .greeting {{ font-size: 24px; margin-bottom: 20px; }}
-            .todo-list {{ background: white; padding: 20px; border-radius: 8px; margin: 20px 0; }}
-            .todo-item {{ padding: 15px 0; border-bottom: 1px solid #eee; }}
-            .todo-item:last-child {{ border-bottom: none; }}
-            .todo-title {{ font-weight: 600; font-size: 16px; margin-bottom: 8px; }}
-            .todo-meta {{ font-size: 13px; color: #666; }}
-            .todo-date {{ margin-right: 15px; }}
-            .time-ago {{ color: #e74c3c; font-weight: 500; }}
-            .footer {{ text-align: center; color: #999; margin-top: 30px; font-size: 12px; }}
-            .notification-time {{ background: #fff3cd; padding: 10px; border-radius: 6px; margin-bottom: 20px; font-size: 14px; color: #856404; }}
-        </style>
-    </head>
-    <body>
-        <div class="container">
-            <div class="header">
-                <h1>📋 待办事项提醒</h1>
-            </div>
-            <div class="content">
-                <p class="greeting">你好，{html_escape(user["username"])}！</p>
-                <div class="notification-time">
-                    ⏰ 当前时间: {now.strftime("%Y-%m-%d %H:%M")} | 每日提醒: {reminder_hour:02d}:{reminder_minute:02d}
-                </div>
-                <p>您共有 <strong>{len(todos)}</strong> 个待办事项未完成：</p>
-                <div class="todo-list">
-                    {todo_items_html}
-                </div>
-                <p style="margin-top: 20px;">点击 <a href="{BASE_URL}">这里</a> 查看和管理您的待办事项。</p>
-                <p style="color: #999; font-size: 12px;">可以在 <a href="{BASE_URL}/settings">设置页</a> 调整提醒时间或关闭每日提醒。</p>
-            </div>
-            <div class="footer">
-                <p>此邮件由系统自动发送，请勿回复。</p>
-            </div>
-        </div>
-    </body>
-    </html>
-    """
 
 
 def get_unfinished_todos(conn, user_id):

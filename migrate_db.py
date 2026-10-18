@@ -11,7 +11,7 @@ import sqlite3
 
 from werkzeug.security import generate_password_hash
 
-DB_NAME = "todos.db"
+DB_NAME = os.environ.get("DB_NAME", "todos.db")
 
 
 def get_db_connection():
